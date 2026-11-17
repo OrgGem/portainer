@@ -24,6 +24,7 @@ interface Props {
   onRename: (oldName: string, newName: string) => void;
   onDownload: (fileName: string) => void;
   onDelete: (fileName: string) => void;
+  onEditText?: (file: FileData) => void;
 
   isUploadAllowed: boolean;
   onFileSelectedForUpload: (file: File) => void;
@@ -61,6 +62,7 @@ export function FilesTable({
   onDownload,
   isUploadAllowed,
   onFileSelectedForUpload,
+  onEditText,
 }: Props) {
   const [isEditState, setIsEditState] = useState(
     Object.fromEntries(dataset.map((f) => [f.Name, false]))
@@ -96,6 +98,7 @@ export function FilesTable({
           onBrowse,
           onDownload,
           onDelete,
+          onEditText,
         })
       )}
       disableSelect

@@ -1,5 +1,6 @@
 import angular from 'angular';
 
+import { RoleManagement } from '@/react/portainer/users/RolesView/RoleManagement';
 import { r2a } from '@/react-tools/react2angular';
 import { withUIRouter } from '@/react-tools/withUIRouter';
 import { withReactQuery } from '@/react-tools/withReactQuery';
@@ -15,4 +16,5 @@ export const usersModule = angular
       'userId',
     ])
   )
+  .component('roleManagement', r2a(withReactQuery(RoleManagement), []))
   .component('rbacRolesDatatable', r2a(RbacRolesDatatable, ['dataset'])).name;

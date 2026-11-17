@@ -11,6 +11,7 @@ import { ResourceControlType } from '@/react/portainer/access-control/types';
 import { queryKeys } from '@/react/common/stacks/queries/query-keys';
 import { notifyError } from '@/portainer/services/notifications';
 import { useUpdateStackResourcesOnDeployment } from '@/react/docker/stacks/ItemView/useUpdateStackResourcesOnDeployment';
+import { useCurrentUser, useIsPureAdmin } from '@/react/hooks/useUser';
 
 import { PageHeader } from '@@/PageHeader';
 
@@ -18,6 +19,8 @@ import { StackDetails } from './StackDetails';
 import { StackServicesDatatable } from './StackServicesDatatable';
 
 export function ItemView() {
+  const isAdmin = useIsPureAdmin();
+  const { user } = useCurrentUser();
   const {
     isExternal,
     isOrphaned,
@@ -81,17 +84,21 @@ export function ItemView() {
             )}
           </>
         )}
-        {stack && !isOrphaned && (
-          <AccessControlPanel
-            environmentId={stack.EndpointId}
-            resourceId={`${stack.EndpointId}_${stack.Name}`}
-            resourceControl={resourceControl}
-            resourceType={ResourceControlType.Stack}
-            onUpdateSuccess={() =>
-              queryClient.invalidateQueries(queryKeys.stack(stackId))
-            }
-          />
-        )}
+        {stack &&
+          !isOrphaned &&
+          (isAdmin ||
+            (!stack.ResourceControl?.StackPolicy &&
+              !user.StandaloneEndpointRoles?.[stack.EndpointId])) && (
+            <AccessControlPanel
+              environmentId={stack.EndpointId}
+              resourceId={`${stack.EndpointId}_${stack.Name}`}
+              resourceControl={resourceControl}
+              resourceType={ResourceControlType.Stack}
+              onUpdateSuccess={() =>
+                queryClient.invalidateQueries(queryKeys.stack(stackId))
+              }
+            />
+          )}
       </div>
     </>
   );

@@ -120,7 +120,8 @@ export function useAuthorizations(
     return { authorized: true, isLoading: false };
   }
 
-  if (!isBE && adminOnlyCE) {
+  const scopedRole = user.StandaloneEndpointRoles?.[envQuery.data?.Id || 0];
+  if (!isBE && adminOnlyCE && scopedRole !== 'environment-admin') {
     return { authorized: false, isLoading: false };
   }
 
@@ -154,6 +155,16 @@ export function hasAuthorizations(
   authorizations: string | string[],
   environmentId?: EnvironmentId
 ) {
+  if (environmentId && user.StandaloneEndpointRoles?.[environmentId]) {
+    const requested =
+      typeof authorizations === 'string' ? [authorizations] : authorizations;
+    return (
+      requested.length === 0 ||
+      requested.some(
+        (operation) => user.EndpointAuthorizations?.[environmentId]?.[operation]
+      )
+    );
+  }
   if (!isBE) {
     return true;
   }

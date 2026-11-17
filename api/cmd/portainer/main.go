@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/sha256"
+	roleauth "github.com/portainer/portainer/pkg/authorization"
 	"os"
 	"path"
 	"strings"
@@ -154,6 +155,10 @@ func initDataStore(flags *portainer.CLIFlags, secretKey []byte, fileService port
 
 	if err := updateSettingsFromFlags(store, flags); err != nil {
 		log.Fatal().Err(err).Msg("failed updating settings from flags")
+	}
+
+	if err := store.UpdateTx(roleauth.EnsureStandalonePolicies); err != nil {
+		log.Fatal().Err(err).Msg("failed initializing Standalone role policies")
 	}
 
 	// this is for the db restore functionality - needs more tests.
@@ -484,6 +489,13 @@ func buildServer(flags *portainer.CLIFlags, shutdownCtx context.Context, shutdow
 	reverseTunnelService.ProxyManager = proxyManager
 
 	composeDeployer := compose.NewComposeDeployer()
+	composeDeployer.GetBuildPolicy = func() (portainer.ComposeBuildPolicy, error) {
+		settings, err := dataStore.Settings().Settings()
+		if err != nil {
+			return portainer.ComposeBuildPolicy{}, err
+		}
+		return settings.EffectiveComposeBuildPolicy(), nil
+	}
 
 	composeStackManager := exec.NewComposeStackManager(composeDeployer, proxyManager)
 

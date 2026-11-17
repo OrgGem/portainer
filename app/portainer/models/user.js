@@ -4,6 +4,7 @@ export function UserViewModel(data) {
   this.Role = data.Role;
   this.ThemeSettings = data.ThemeSettings;
   this.EndpointAuthorizations = data.EndpointAuthorizations;
+  this.StandaloneEndpointRoles = data.StandaloneEndpointRoles;
   this.PortainerAuthorizations = data.PortainerAuthorizations;
   if (data.Role === 1) {
     this.RoleName = 'administrator';

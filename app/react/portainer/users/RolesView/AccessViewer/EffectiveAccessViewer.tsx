@@ -14,6 +14,9 @@ export function EffectiveAccessViewer({ userId }: { userId: UserId | null }) {
     return null;
   }
 
+  if (query.isLoading) return <p>Loading effective access...</p>;
+  if (query.isError)
+    return <p role="alert">Unable to load effective access.</p>;
   return <EffectiveAccessViewerDatatable dataset={query.data ?? []} />;
 }
 

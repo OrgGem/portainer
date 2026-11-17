@@ -14,6 +14,7 @@ import { quickActions } from './quick-actions';
 import { stack } from './stack';
 import { state } from './state';
 import { gpus } from './gpus';
+import { resources } from './resources';
 
 export function useColumns(
   isHostColumnVisible: boolean,
@@ -24,6 +25,7 @@ export function useColumns(
       _.compact([
         name,
         state,
+        resources,
         quickActions,
         stack,
         image,

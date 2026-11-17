@@ -6,6 +6,7 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/dataservices"
 	dockerclient "github.com/portainer/portainer/api/docker/client"
+	"github.com/portainer/portainer/api/docker/resourcemetrics"
 	"github.com/portainer/portainer/api/http/proxy"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/internal/authorization"
@@ -40,13 +41,15 @@ type Handler struct {
 	BindAddressHTTPS       string
 	PendingActionsService  *pendingactions.PendingActionsService
 	PullLimitCheckDisabled bool
+	resourceMetrics        *resourcemetrics.Cache
 }
 
 // NewHandler creates a handler to manage environment(endpoint) operations.
 func NewHandler(bouncer security.BouncerService) *Handler {
 	h := &Handler{
-		Router:         mux.NewRouter(),
-		requestBouncer: bouncer,
+		Router:          mux.NewRouter(),
+		requestBouncer:  bouncer,
+		resourceMetrics: resourcemetrics.NewCache(),
 	}
 
 	h.Handle("/endpoints",
@@ -67,6 +70,10 @@ func NewHandler(bouncer security.BouncerService) *Handler {
 
 	h.Handle("/endpoints/{id}",
 		bouncer.RestrictedAccess(httperror.LoggerHandler(h.endpointInspect))).Methods(http.MethodGet)
+	h.Handle("/endpoints/{id}/metrics",
+		bouncer.RestrictedAccess(httperror.LoggerHandler(h.endpointMetrics))).Methods(http.MethodGet)
+	h.Handle("/endpoints/{id}/containers/{containerId}/metrics",
+		bouncer.RestrictedAccess(httperror.LoggerHandler(h.containerMetrics))).Methods(http.MethodGet)
 	h.Handle("/endpoints/{id}",
 		bouncer.AdminAccess(httperror.LoggerHandler(h.endpointUpdate))).Methods(http.MethodPut)
 	h.Handle("/endpoints/{id}",

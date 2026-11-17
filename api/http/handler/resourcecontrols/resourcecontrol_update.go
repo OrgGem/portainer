@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/dataservices"
 	httperrors "github.com/portainer/portainer/api/http/errors"
 	"github.com/portainer/portainer/api/http/security"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
@@ -78,6 +79,18 @@ func (handler *Handler) resourceControlUpdate(w http.ResponseWriter, r *http.Req
 	if !security.AuthorizedResourceControlAccess(resourceControl, securityContext) {
 		return httperror.Forbidden("Permission denied to access the resource control", httperrors.ErrResourceAccessDenied)
 	}
+	if !securityContext.IsAdmin {
+		scoped, err := security.UserHasStandaloneRole(handler.DataStore, securityContext.UserID)
+		if err != nil {
+			return httperror.InternalServerError("Unable to verify scoped roles", err)
+		}
+		if scoped {
+			return httperror.Forbidden("Scoped environment roles cannot change resource ownership", security.ErrStandaloneRoleDenied)
+		}
+	}
+	if resourceControl.StackPolicy != nil && !securityContext.IsAdmin {
+		return httperror.Forbidden("Only administrators may change ownership of a stack with an operation policy", httperrors.ErrResourceAccessDenied)
+	}
 
 	resourceControl.Public = payload.Public
 	resourceControl.AdministratorsOnly = payload.AdministratorsOnly
@@ -106,7 +119,33 @@ func (handler *Handler) resourceControlUpdate(w http.ResponseWriter, r *http.Req
 		return httperror.Forbidden("Permission denied to update the resource control", httperrors.ErrResourceAccessDenied)
 	}
 
-	if err := handler.DataStore.ResourceControl().Update(resourceControl.ID, resourceControl); err != nil {
+	err = handler.DataStore.UpdateTx(func(tx dataservices.DataStoreTx) error {
+		if !securityContext.IsAdmin {
+			scoped, err := security.UserHasStandaloneRole(tx, securityContext.UserID)
+			if err != nil {
+				return err
+			}
+			if scoped {
+				return httperrors.ErrResourceAccessDenied
+			}
+		}
+		current, err := tx.ResourceControl().Read(resourceControl.ID)
+		if err != nil {
+			return err
+		}
+		// A policy may have been enabled after the initial ownership read. Check
+		// and preserve the latest policy in the same transaction as this write.
+		if !security.AuthorizedResourceControlAccess(current, securityContext) ||
+			(current.StackPolicy != nil && !securityContext.IsAdmin) {
+			return httperrors.ErrResourceAccessDenied
+		}
+		resourceControl.StackPolicy = current.StackPolicy
+		return tx.ResourceControl().Update(resourceControl.ID, resourceControl)
+	})
+	if errors.Is(err, httperrors.ErrResourceAccessDenied) {
+		return httperror.Forbidden("Permission denied to update the current resource control", err)
+	}
+	if err != nil {
 		return httperror.InternalServerError("Unable to persist resource control changes inside the database", err)
 	}
 

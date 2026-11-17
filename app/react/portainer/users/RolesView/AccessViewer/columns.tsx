@@ -25,6 +25,38 @@ export const columns = [
     id: 'Role',
   }),
   helper.display({
+    header: 'Configured access',
+    cell: ({ row: { original: item } }) => (
+      <div>
+        <p>
+          {item.resourceScope ||
+            'Legacy CE access; assign an explicit Standalone role to configure feature restrictions.'}
+        </p>
+        {item.restrictions?.map((restriction) => (
+          <p key={restriction}>{restriction}</p>
+        ))}
+        {item.policy && (
+          <details>
+            <summary>
+              {item.policy.Enabled ? 'Enabled' : 'Disabled'} | Policy v
+              {item.policy.Version}
+            </summary>
+            <ul>
+              {item.features?.map((f) => (
+                <li key={f.ID}>
+                  {f.Name}:{' '}
+                  {item.policy?.Enabled && item.policy.Features[f.ID]
+                    ? 'Enabled'
+                    : 'Disabled'}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+    ),
+  }),
+  helper.display({
     header: 'Access Origin',
     cell: AccessCell,
   }),
@@ -45,7 +77,7 @@ function AccessCell({
   if (item.roleId === 0) {
     return (
       <>
-        User access all environments
+        Global or system access to all environments
         <div>
           <Link
             to="portainer.settings.edgeCompute"

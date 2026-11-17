@@ -1,0 +1,55 @@
+package proxy
+
+import (
+	"bufio"
+	"context"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestLocalProxyUpgradeRelaysBinaryBothDirections(t *testing.T) {
+	payload := []byte{0, 1, 2, 255, 128, 'b', 'k'}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, rw, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n")
+		_ = rw.Flush()
+		data := make([]byte, len(payload))
+		if _, err := io.ReadFull(rw, data); err == nil {
+			_, _ = conn.Write(data)
+		}
+	}))
+	defer backend.Close()
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", strings.TrimPrefix(backend.URL, "http://"))
+	}}
+	defer transport.CloseIdleConnections()
+	front := httptest.NewServer(&LocalProxy{transport: transport})
+	defer front.Close()
+	conn, err := net.Dial("tcp", strings.TrimPrefix(front.URL, "http://"))
+	require.NoError(t, err)
+	defer conn.Close()
+	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+	_, err = io.WriteString(conn, "POST /exec/test/start HTTP/1.1\r\nHost: agent\r\nConnection: Upgrade\r\nUpgrade: tcp\r\nContent-Length: 0\r\n\r\n")
+	require.NoError(t, err)
+	reader := bufio.NewReader(conn)
+	response, err := http.ReadResponse(reader, nil)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusSwitchingProtocols, response.StatusCode)
+	_, err = conn.Write(payload)
+	require.NoError(t, err)
+	actual := make([]byte, len(payload))
+	_, err = io.ReadFull(reader, actual)
+	require.NoError(t, err)
+	require.Equal(t, payload, actual)
+}

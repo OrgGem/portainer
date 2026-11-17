@@ -63,93 +63,62 @@ function renderAccessTab() {
   return render(<Wrapped />);
 }
 
-describe('AccessTab', () => {
-  test('shows the authorized users and teams, and hides the rest', async () => {
+describe('AccessTab group roles', () => {
+  test('does not turn a legacy CE RoleId 1 grant into an administrator', async () => {
     setupMocks({
-      group: {
-        ...mockGroup,
-        UserAccessPolicies: { 5: { RoleId: 3 } },
-        TeamAccessPolicies: { 3: { RoleId: 3 } },
-      },
-      users: [
-        { Id: 5, Username: 'authorized-user', Role: 2 },
-        { Id: 6, Username: 'other-user', Role: 2 },
-      ],
-      teams: [
-        { Id: 3, Name: 'authorized-team' },
-        { Id: 4, Name: 'other-team' },
-      ],
+      group: { ...mockGroup, TeamAccessPolicies: { 3: { RoleId: 1 } } },
+      teams: [{ Id: 3, Name: 'legacy-team' }],
     });
     renderAccessTab();
-
-    await waitFor(() => {
-      expect(screen.getByText('authorized-user')).toBeVisible();
-    });
-    expect(screen.getByText('authorized-team')).toBeVisible();
-    expect(screen.queryByText('other-user')).not.toBeInTheDocument();
-    expect(screen.queryByText('other-team')).not.toBeInTheDocument();
+    expect(
+      await screen.findByLabelText('Role for Group: legacy-team')
+    ).toHaveValue('legacy');
+    expect(screen.getByRole('button', { name: 'Save role' })).toBeDisabled();
   });
 
-  test('assigns a selected user to the group', async () => {
+  test('assigns Read-only to a team by default and preserves other grants', async () => {
+    const onUpdate = setupMocks({
+      group: { ...mockGroup, UserAccessPolicies: { 5: { RoleId: 3 } } },
+      users: [{ Id: 5, Username: 'existing-user', Role: 2 }],
+      teams: [{ Id: 3, Name: 'readers' }],
+    });
+    renderAccessTab();
+    await userEvent.selectOptions(
+      await screen.findByLabelText('Group or user'),
+      'team:3'
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Assign role' }));
+    await waitFor(() =>
+      expect(onUpdate).toHaveBeenCalledWith({
+        UserAccessPolicies: { 5: { RoleId: 3 } },
+        TeamAccessPolicies: { 3: { RoleId: 4, StandaloneRole: 'read-only' } },
+      })
+    );
+  });
+
+  test('changes a team to Environment administrator using only scoped policies', async () => {
     const onUpdate = setupMocks({
       group: { ...mockGroup, TeamAccessPolicies: { 3: { RoleId: 3 } } },
-      users: [{ Id: 6, Username: 'new-user', Role: 2 }],
-      teams: [{ Id: 3, Name: 'authorized-team' }],
+      teams: [{ Id: 3, Name: 'operators' }],
     });
     renderAccessTab();
-
-    const selector = await screen.findByLabelText(
-      'Select user(s) and/or team(s)'
+    await userEvent.selectOptions(
+      await screen.findByLabelText('Role for Group: operators'),
+      'environment-admin'
     );
-    await userEvent.click(selector);
-    await userEvent.click(await screen.findByText('new-user'));
-    await userEvent.click(
-      screen.getByRole('button', { name: /Create access/ })
-    );
-
-    await waitFor(() => {
+    await userEvent.click(screen.getByRole('button', { name: 'Save role' }));
+    await waitFor(() =>
       expect(onUpdate).toHaveBeenCalledWith({
-        UserAccessPolicies: { 6: { RoleId: 3 } },
-        TeamAccessPolicies: { 3: { RoleId: 3 } },
-      });
-    });
-
-    // the selector only clears once the mutation succeeds
-    await waitFor(() => {
-      expect(
-        screen.queryByRole('button', { name: 'Remove new-user' })
-      ).not.toBeInTheDocument();
-    });
+        UserAccessPolicies: {},
+        TeamAccessPolicies: {
+          3: { RoleId: 1, StandaloneRole: 'environment-admin' },
+        },
+      })
+    );
   });
 
-  test('creating access leaves the remove button idle', async () => {
-    // never resolves, so the create request stays in flight while we assert
-    setupMocks({
-      group: { ...mockGroup, UserAccessPolicies: { 5: { RoleId: 3 } } },
-      users: [
-        { Id: 5, Username: 'authorized-user', Role: 2 },
-        { Id: 6, Username: 'new-user', Role: 2 },
-      ],
-      holdUpdate: new Promise<void>(() => {}),
-    });
-    renderAccessTab();
-
-    const selector = await screen.findByLabelText(
-      'Select user(s) and/or team(s)'
-    );
-    await userEvent.click(selector);
-    await userEvent.click(await screen.findByText('new-user'));
-    await userEvent.click(
-      screen.getByRole('button', { name: /Create access/ })
-    );
-
-    await screen.findByText('Creating access...');
-    expect(screen.queryByText('Removing...')).not.toBeInTheDocument();
-  });
-
-  test('keeps the selection when creating access fails', async () => {
-    const restoreConsole = suppressConsoleLogs();
-    setupMocks({ users: [{ Id: 6, Username: 'new-user', Role: 2 }] });
+  test('keeps the selected group and role after a failed save for retry', async () => {
+    setupMocks({ teams: [{ Id: 3, Name: 'readers' }] });
     server.use(
       http.put(
         '/api/endpoint_groups/2',
@@ -157,23 +126,40 @@ describe('AccessTab', () => {
       )
     );
     renderAccessTab();
-
-    const selector = await screen.findByLabelText(
-      'Select user(s) and/or team(s)'
+    await userEvent.selectOptions(
+      await screen.findByLabelText('Group or user'),
+      'team:3'
     );
-    await userEvent.click(selector);
-    await userEvent.click(await screen.findByText('new-user'));
-    await userEvent.click(
-      screen.getByRole('button', { name: /Create access/ })
+    const restoreConsole = suppressConsoleLogs();
+    await userEvent.click(screen.getByRole('button', { name: 'Assign role' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Assign role' })).toBeEnabled()
     );
-
-    // once the request settles the selection is still there to retry with
-    await waitFor(() => {
-      expect(screen.queryByText('Creating access...')).not.toBeInTheDocument();
-    });
-    expect(
-      screen.getByRole('button', { name: 'Remove new-user' })
-    ).toBeVisible();
+    expect(screen.getByLabelText('Group or user')).toHaveValue('team:3');
+    expect(screen.getByLabelText('Environment role')).toHaveValue('read-only');
     restoreConsole();
   });
+});
+
+test('allows legacy group access without writing a StandaloneRole', async () => {
+  const onUpdate = setupMocks({
+    group: { ...mockGroup, UserAccessPolicies: {}, TeamAccessPolicies: {} },
+    teams: [{ Id: 3, Name: 'mixed-team' }],
+  });
+  renderAccessTab();
+  await userEvent.selectOptions(
+    await screen.findByLabelText('Group or user'),
+    'team:3'
+  );
+  await userEvent.selectOptions(
+    screen.getByLabelText('Environment role'),
+    'legacy'
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Assign role' }));
+  await waitFor(() =>
+    expect(onUpdate).toHaveBeenCalledWith({
+      UserAccessPolicies: {},
+      TeamAccessPolicies: { 3: { RoleId: 1 } },
+    })
+  );
 });

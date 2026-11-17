@@ -109,6 +109,7 @@ angular.module('portainer.app').factory('Authentication', [
       user.role = userData.Role;
       user.forceChangePassword = userData.forceChangePassword;
       user.endpointAuthorizations = userData.EndpointAuthorizations;
+      user.standaloneEndpointRoles = userData.StandaloneEndpointRoles;
       user.portainerAuthorizations = userData.PortainerAuthorizations;
 
       // Initialize user theme base on UserTheme from database
@@ -161,6 +162,7 @@ angular.module('portainer.app').factory('Authentication', [
       return useUserHasAuthorization(
         {
           EndpointAuthorizations: user.endpointAuthorizations,
+          StandaloneEndpointRoles: user.standaloneEndpointRoles,
         },
         authorizations,
         endpointId

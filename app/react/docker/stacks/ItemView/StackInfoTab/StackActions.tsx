@@ -21,6 +21,7 @@ import { ModalType } from '@@/modals/Modal/types';
 import { buildConfirmButton } from '@@/modals/utils';
 
 import { useUpdateStackMutation } from '../../useUpdateStack';
+import { useStackAction } from '../StackControls/queries';
 
 import { useStartStackMutation } from './useStartStackMutation';
 import { useStopStackMutation } from './useStopStackMutation';
@@ -41,6 +42,8 @@ export function StackActions({
   status: Stack['Status'];
 }) {
   const router = useRouter();
+  const canDeploy = useStackAction(stack, 'deploy');
+  const canEdit = useStackAction(stack, 'edit');
   const startStackMutation = useStartStackMutation();
   const stopStackMutation = useStopStackMutation();
   const deleteStackMutation = useDeleteStackMutation();
@@ -66,7 +69,7 @@ export function StackActions({
               color="dangerlight"
               size="small"
               onClick={() => handleStop()}
-              disabled={isMutating}
+              disabled={isMutating || !canDeploy}
               data-cy="stack-stop-btn"
             >
               Stop this stack
@@ -78,7 +81,7 @@ export function StackActions({
               color="success"
               data-cy="stack-start-btn"
               size="small"
-              disabled={isMutating}
+              disabled={isMutating || !canDeploy}
               onClick={() => handleStart()}
             >
               Start this stack
@@ -93,7 +96,7 @@ export function StackActions({
           color="dangerlight"
           size="small"
           onClick={() => handleDelete()}
-          disabled={isMutating || isDeploying}
+          disabled={isMutating || isDeploying || !canDeploy || !canEdit}
           data-cy="stack-delete-btn"
         >
           Delete this stack
@@ -119,7 +122,7 @@ export function StackActions({
         </Button>
       )}
 
-      {!!stack.GitConfig && !stack.FromAppTemplate && (
+      {!!stack.GitConfig && !stack.FromAppTemplate && canEdit && (
         <>
           <EditGitSettingsButton stack={stack} />
 

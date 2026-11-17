@@ -1,7 +1,9 @@
 package users
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/dataservices"
@@ -88,6 +90,11 @@ func (handler *Handler) userEffectiveAccess(w http.ResponseWriter, r *http.Reque
 			return httperror.InternalServerError("Unable to retrieve team memberships from the database", err)
 		}
 
+		controls, err := tx.ResourceControl().ReadAll()
+		if err != nil {
+			return err
+		}
+
 		groupsByID := make(map[portainer.EndpointGroupID]portainer.EndpointGroup, len(groups))
 		for _, g := range groups {
 			groupsByID[g.ID] = g
@@ -100,6 +107,59 @@ func (handler *Handler) userEffectiveAccess(w http.ResponseWriter, r *http.Reque
 
 		for i := range endpoints {
 			endpoint := &endpoints[i]
+			if user.Role == portainer.AdministratorRole {
+				entries = append(entries, EffectiveAccessEntry{EndpointID: endpoint.ID, EndpointName: endpoint.Name, RoleName: "Global administrator", ResourceScope: "All resources; global administrator bypasses Standalone role restrictions", AccessLocation: AccessLocationEnvironment})
+				continue
+			}
+			group := groupsByID[endpoint.GroupID]
+			if authorization.SupportsStandaloneRoles(endpoint) && (authorization.HasStandalonePolicies(endpoint.UserAccessPolicies, endpoint.TeamAccessPolicies) || authorization.HasStandalonePolicies(group.UserAccessPolicies, group.TeamAccessPolicies)) {
+				access := authorization.ResolveStandaloneAccess(authorization.ResolverInput{User: user, Endpoint: endpoint, EndpointGroup: group, UserMemberships: memberships})
+				if access != nil {
+					definition := authorization.StandaloneRoleDefinition(access.Role)
+					if definition != nil {
+						entry := buildEffectiveAccessEntry(&authorization.ResolvedAccess{Role: definition, Source: access.Source}, endpoint, groupsByID, teamsByID)
+						entry.StandaloneRole = access.Role
+						if !access.EnvironmentAdmin() {
+							if !endpoint.SecuritySettings.AllowStackManagementForRegularUsers {
+								entry.Restrictions = append(entry.Restrictions, "Environment disables stack management for regular users")
+							}
+							if !endpoint.SecuritySettings.AllowBindMountsForRegularUsers {
+								entry.Restrictions = append(entry.Restrictions, "Environment disallows bind mounts for regular users")
+							}
+							if !endpoint.SecuritySettings.AllowPrivilegedModeForRegularUsers {
+								entry.Restrictions = append(entry.Restrictions, "Environment disallows privileged containers for regular users")
+							}
+						}
+						count := 0
+						for _, c := range controls {
+							if c.Type == portainer.StackResourceControl && c.StackPolicy != nil && strings.HasPrefix(c.ResourceID, fmt.Sprintf("%d_", endpoint.ID)) {
+								count++
+							}
+						}
+						if count > 0 {
+							entry.Restrictions = append(entry.Restrictions, fmt.Sprintf("%d stack(s) have action policies; direct Docker writes are restricted unless environment administrator", count))
+						}
+						entry.ResourceScope = "Assigned and public resources; ownership and stack policies still apply"
+						if access.AllResources() {
+							entry.ResourceScope = "All environment resources; stack policies still apply"
+						}
+						if access.EnvironmentAdmin() {
+							entry.ResourceScope = "All environment resources; environment administrator bypasses stack ownership/action policies"
+						}
+						if access.Explicit {
+							entry.Policy, err = authorization.ReadStandalonePolicy(tx, access.Role)
+							if err != nil {
+								return err
+							}
+							entry.Features = authorization.StandaloneFeatures
+						} else {
+							entry.ResourceScope = "Legacy CE grant; configurable Standalone role restrictions do not apply. Assign an explicit Standalone role to configure access."
+						}
+						entries = append(entries, entry)
+					}
+				}
+				continue
+			}
 
 			access := authorization.ResolveUserEndpointAccess(authorization.ResolverInput{
 				User:            user,
@@ -156,14 +216,19 @@ func buildEffectiveAccessEntry(
 }
 
 type EffectiveAccessEntry struct {
-	EndpointID     portainer.EndpointID      `json:"endpointId"`
-	EndpointName   string                    `json:"endpointName"`
-	RoleID         portainer.RoleID          `json:"roleId"`
-	RoleName       string                    `json:"roleName"`
-	RolePriority   int                       `json:"rolePriority"`
-	GroupID        portainer.EndpointGroupID `json:"groupId,omitempty"`
-	GroupName      string                    `json:"groupName,omitempty"`
-	TeamID         portainer.TeamID          `json:"teamId,omitempty"`
-	TeamName       string                    `json:"teamName,omitempty"`
-	AccessLocation AccessLocation            `json:"accessLocation"`
+	Restrictions   []string                        `json:"restrictions,omitempty"`
+	StandaloneRole portainer.StandaloneRole        `json:"standaloneRole,omitempty"`
+	Policy         *portainer.StandaloneRolePolicy `json:"policy,omitempty"`
+	Features       []authorization.RoleFeature     `json:"features,omitempty"`
+	ResourceScope  string                          `json:"resourceScope,omitempty"`
+	EndpointID     portainer.EndpointID            `json:"endpointId"`
+	EndpointName   string                          `json:"endpointName"`
+	RoleID         portainer.RoleID                `json:"roleId"`
+	RoleName       string                          `json:"roleName"`
+	RolePriority   int                             `json:"rolePriority"`
+	GroupID        portainer.EndpointGroupID       `json:"groupId,omitempty"`
+	GroupName      string                          `json:"groupName,omitempty"`
+	TeamID         portainer.TeamID                `json:"teamId,omitempty"`
+	TeamName       string                          `json:"teamName,omitempty"`
+	AccessLocation AccessLocation                  `json:"accessLocation"`
 }

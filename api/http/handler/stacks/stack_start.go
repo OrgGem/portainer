@@ -16,7 +16,6 @@ import (
 	"github.com/portainer/portainer/api/stacks/stackutils"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
-	"github.com/portainer/portainer/pkg/libhttp/response"
 
 	"github.com/rs/zerolog/log"
 )
@@ -126,7 +125,7 @@ func (handler *Handler) stackStart(w http.ResponseWriter, r *http.Request) *http
 		return httperror.Forbidden("Access denied to resource", httperrors.ErrResourceAccessDenied)
 	}
 
-	if err := deployments.ValidateStackForUser(stack, endpoint, securityContext.User, handler.StackDeployer, handler.FileService); err != nil {
+	if err := deployments.ValidateStackForUser(stack, endpoint, securityContext.User, handler.StackDeployer, handler.FileService, security.ScopedEnvironmentAdmin(securityContext, endpoint.ID)); err != nil {
 		return httperror.Forbidden("Stack files are not allowed for this user", err)
 	}
 
@@ -163,7 +162,7 @@ func (handler *Handler) stackStart(w http.ResponseWriter, r *http.Request) *http
 		return nil
 	})
 
-	return response.TxResponse(w, stack, err)
+	return handler.writeRoleStackResponse(w, r, stack, err)
 }
 
 func (handler *Handler) startStack(

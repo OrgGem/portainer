@@ -10,6 +10,7 @@ import (
 	dockerconsts "github.com/portainer/portainer/api/docker/consts"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/uac"
+	"github.com/portainer/portainer/pkg/authorization"
 )
 
 type StackViewModel struct {
@@ -34,6 +35,14 @@ func GetDockerStacks(tx dataservices.DataStoreTx, securityContext *security.Rest
 		return nil, fmt.Errorf("Unable to retrieve user: %w", err)
 	}
 
+	endpoint, err := tx.Endpoint().Endpoint(environmentID)
+	if err != nil {
+		return nil, err
+	}
+	access, err := authorization.StandaloneAccessForUser(tx, user.ID, endpoint)
+	if err != nil {
+		return nil, err
+	}
 	stacksNameSet := map[string]*StackViewModel{}
 
 	for i := range stacks {
@@ -86,7 +95,7 @@ func GetDockerStacks(tx dataservices.DataStoreTx, securityContext *security.Rest
 				return uac.StackResourceControlGetter(tx, environmentID)(*item.InternalStack)
 			}
 			return uac.ExternalStackResourceControlGetter(tx, environmentID)(uac.ExternalStack{Labels: item.Labels})
-		},
+		}, access,
 	)
 }
 

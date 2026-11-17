@@ -6,6 +6,7 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/internal/authorization"
 	"github.com/portainer/portainer/api/slicesx"
+	roleauth "github.com/portainer/portainer/pkg/authorization"
 )
 
 // FilterByResourceControl filters a list of items based on the user's role and the resource control associated to the item.
@@ -18,6 +19,7 @@ func FilterByResourceControl[T any](
 	user *portainer.User,
 	userMemberships []portainer.TeamMembership,
 	resourceControlGetter func(item T) (*portainer.ResourceControl, error),
+	scoped ...*roleauth.StandaloneAccess,
 ) ([]T, error) {
 	filteredItems := make([]T, 0)
 
@@ -40,7 +42,11 @@ func FilterByResourceControl[T any](
 		}
 
 		// TODO: move UserCanAccessResource function to the UAC package
-		if authorization.UserCanAccessResource(user.ID, userTeamIDs, rc) {
+		allowed := authorization.UserCanAccessResource(user.ID, userTeamIDs, rc)
+		if len(scoped) > 0 {
+			allowed = roleauth.StandaloneResourceAccess(scoped[0], user.ID, userTeamIDs, rc)
+		}
+		if allowed {
 			filteredItems = append(filteredItems, item)
 		}
 	}

@@ -50,5 +50,8 @@ func (handler *Handler) userInspect(w http.ResponseWriter, r *http.Request) *htt
 	}
 
 	hideFields(user)
+	if err := handler.decorateStandaloneRoles(user); err != nil {
+		return httperror.InternalServerError("Unable to resolve environment roles", err)
+	}
 	return response.JSON(w, user)
 }

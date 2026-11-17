@@ -1,5 +1,6 @@
 import { EnvironmentId } from '@/react/portainer/environments/types';
 import { AuthorizationMap } from '@/react/portainer/users/RolesView/types';
+import { StandaloneRole } from '@/react/portainer/access-control/StandaloneAccessManagement/types';
 
 import { type UserId } from './types/user-id';
 
@@ -23,6 +24,7 @@ export type User = {
   Id: UserId;
   Username: string;
   Role: Role;
+  StandaloneEndpointRoles?: Record<EnvironmentId, StandaloneRole>;
   EndpointAuthorizations: {
     [endpointId: EnvironmentId]: AuthorizationMap;
   };

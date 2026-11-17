@@ -44,6 +44,11 @@ func (handler *Handler) containerGpusInspect(w http.ResponseWriter, r *http.Requ
 		return httperror.NotFound("Unable to find an environment on request context", err)
 	}
 
+	canonicalID, denied := handler.authorizeContainer(r, endpoint, containerId)
+	if denied != nil {
+		return denied
+	}
+	containerId = canonicalID
 	agentTargetHeader := r.Header.Get(portainer.PortainerAgentTargetHeader)
 
 	cli, err := handler.dockerClientFactory.CreateClient(endpoint, agentTargetHeader, nil)

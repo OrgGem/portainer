@@ -1,6 +1,7 @@
 package stacks
 
 import (
+	roleauth "github.com/portainer/portainer/pkg/authorization"
 	"net/http"
 
 	portainer "github.com/portainer/portainer/api"
@@ -92,6 +93,15 @@ func (handler *Handler) stackInspect(w http.ResponseWriter, r *http.Request) *ht
 		}
 	}
 
+	if !securityContext.IsAdmin && securityContext.StandaloneRole != "" {
+		policy, err := roleauth.ReadStandalonePolicy(handler.DataStore, securityContext.StandaloneRole)
+		if err != nil {
+			return httperror.InternalServerError("Unable to read role policy", err)
+		}
+		if !roleauth.RoleFeatureAllowed(policy, securityContext.StandaloneRole, "vault.view") {
+			stack.VaultMappings = nil
+		}
+	}
 	userContext := source.NewUserContext(securityContext.User, securityContext.UserMemberships)
 	resp, err := newStackResponse(handler.DataStore, userContext, stack)
 	if err != nil {

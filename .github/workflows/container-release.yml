@@ -1,0 +1,142 @@
+name: Release custom containers
+
+on:
+  push:
+    tags:
+      - 'v*-custom.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  backend:
+    name: Validate release and backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      image: ${{ steps.release.outputs.image }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate version tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < deploy/standalone/VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-custom\.[1-9][0-9]*$ ]]
+          [[ "$RELEASE_TAG" == "v$version" ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test standalone controls and build limits
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go test -mod=readonly -p 2 -count=1 -timeout=10m \
+            ./pkg/authorization ./pkg/libstack/compose ./api/exec \
+            ./api/docker/resourcemetrics ./api/stacks/stackconfig \
+            ./api/stacks/vaultrefs ./api/stacks/deployments ./api/uac \
+            ./api/http/handler/docker/... ./api/http/handler/roles \
+            ./api/http/handler/users ./api/http/handler/stacks \
+            ./api/http/handler/endpoints ./api/http/handler/endpointgroups \
+            ./api/http/handler/resourcecontrols ./api/http/handler/settings \
+            ./api/http/handler/webhooks ./api/http/proxy/factory/docker
+          # The JWT expiry tests use short deadlines: run without package contention.
+          go test -mod=readonly -count=1 -timeout=5m ./api/http/security
+
+  frontend:
+    name: Validate frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.22.1'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-pnpmfile
+      - run: pnpm typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+      - name: Test custom UI and access integration
+        run: |
+          pnpm exec vitest run --maxWorkers=2 \
+            app/react/docker/components/ResourceUsage \
+            app/react/docker/stacks/ItemView/StackControls \
+            app/react/docker/volumes/BrowseView/VolumeTextEditor.test.tsx \
+            app/react/portainer/vault-mappings \
+            app/react/portainer/settings/SettingsView/BuildPolicyPanel.test.tsx \
+            app/react/portainer/users/RolesView \
+            app/react/portainer/environments/environment-groups/ItemView/tabs/AccessTab.test.tsx \
+            app/react/portainer/HomeView/EnvironmentList/EnvironmentItem/EnvironmentCard.test.tsx
+
+  publish:
+    name: Publish ${{ matrix.component }} (linux/amd64)
+    needs: [backend, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: server
+            dockerfile: deploy/standalone/Dockerfile
+            suffix: ''
+          - component: agent
+            dockerfile: deploy/standalone/agent/Dockerfile
+            suffix: '-agent'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ needs.backend.outputs.image }}${{ matrix.suffix }}:${{ needs.backend.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.backend.outputs.version }}
+            org.opencontainers.image.licenses=Zlib
+          cache-from: type=gha,scope=custom-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=custom-${{ matrix.component }}
+      - name: Record published digest
+        env:
+          IMAGE: ${{ needs.backend.outputs.image }}${{ matrix.suffix }}
+          VERSION: ${{ needs.backend.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### $IMAGE:$VERSION"
+            echo "Digest: \`$DIGEST\`"
+            echo "Pull: \`docker pull $IMAGE@$DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"

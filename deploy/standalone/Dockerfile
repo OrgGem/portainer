@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+FROM node:22.22.1-bookworm-slim AS client
+WORKDIR /src
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-pnpmfile
+COPY . .
+RUN NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 pnpm build --config webpack/webpack.production.js
+
+FROM golang:1.26.10-bookworm AS server
+WORKDIR /src
+COPY . .
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go test -mod=readonly ./api/docker/resourcemetrics
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/portainer ./api/cmd/portainer
+
+FROM portainer/portainer-ce:2.45.3
+COPY --from=server /out/portainer /portainer
+COPY --from=client /src/dist/public /public
+LABEL org.opencontainers.image.title="Portainer CE 2.45.3 with standalone stack controls"

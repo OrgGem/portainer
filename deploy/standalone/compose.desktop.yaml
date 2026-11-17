@@ -1,0 +1,15 @@
+# Use after compose.yaml. STACK_CONFIG_ROOT must be the named volume's actual
+# Docker daemon Mountpoint (docker volume inspect), not a Windows host path.
+services:
+  portainer:
+    command: ["-H", "unix:///var/run/docker.sock", "--http-enabled"]
+    ports:
+      - "127.0.0.1:${PORTAINER_HTTP_PORT:-9000}:9000"
+    volumes:
+      - type: volume
+        source: stack_config_files
+        target: ${STACK_CONFIG_ROOT:?Set STACK_CONFIG_ROOT from docker volume inspect}
+volumes:
+  stack_config_files:
+    external: true
+    name: portainer_stack_configs

@@ -22,6 +22,7 @@ import (
 	"github.com/portainer/portainer/api/internal/authorization"
 	"github.com/portainer/portainer/api/logs"
 	"github.com/portainer/portainer/api/slicesx"
+	roleauth "github.com/portainer/portainer/pkg/authorization"
 	"github.com/portainer/portainer/pkg/fips"
 	httprequest "github.com/portainer/portainer/pkg/libhttp/request"
 	"github.com/portainer/portainer/pkg/libhttp/ssrf"
@@ -59,6 +60,7 @@ type (
 	}
 
 	restrictedDockerOperationContext struct {
+		standaloneAccess *roleauth.StandaloneAccess
 		isAdmin          bool
 		userID           portainer.UserID
 		userTeamIDs      []portainer.TeamID
@@ -147,6 +149,24 @@ func (transport *Transport) proxyDockerRequest(request *http.Request, fipsMode b
 	}
 
 	unversionedPath := httprequest.TrimDockerVersion(request.URL.Path)
+	if token, err := security.RetrieveTokenData(request); roleauth.SupportsStandaloneRoles(transport.endpoint) && err == nil && token.Role != portainer.AdministratorRole {
+		endpoint, err := transport.dataStore.Endpoint().Endpoint(transport.endpoint.ID)
+		if err != nil {
+			return nil, err
+		}
+		if err := security.CheckStandaloneEndpointRole(request, transport.dataStore, endpoint, true); err != nil {
+			if errors.Is(err, security.ErrStandaloneRoleDenied) {
+				return utils.WriteAccessDeniedResponse()
+			}
+			return nil, err
+		}
+	}
+	if err := security.CheckStackDockerAccess(request, transport.dataStore, transport.endpoint.ID); err != nil {
+		if errors.Is(err, security.ErrStackDockerAccessDenied) {
+			return utils.WriteAccessDeniedResponse()
+		}
+		return nil, err
+	}
 
 	// The agent verifies this signature unless it is running in FIPS mode, where it
 	// relies on mTLS instead. Skip sending it to match that behaviour.
@@ -172,6 +192,13 @@ func (transport *Transport) proxyDockerRequest(request *http.Request, fipsMode b
 		return proxyFunc(transport, request, unversionedPath)
 	}
 
+	if unversionedPath == "/commit" && request.Method == http.MethodPost {
+		id := request.URL.Query().Get("container")
+		if id == "" {
+			return utils.WriteAccessDeniedResponse()
+		}
+		return transport.restrictedResourceOperation(request, id, id, portainer.ContainerResourceControl, false)
+	}
 	if isAdminOnlyRoute(request.Method, unversionedPath) {
 		return transport.administratorOperation(request)
 	}
@@ -197,6 +224,8 @@ func (transport *Transport) proxyAgentRequest(r *http.Request, unversionedPath s
 	requestPath := strings.TrimPrefix(unversionedPath, "/v2")
 
 	switch {
+	case requestPath == "/browse/text":
+		return transport.proxyVolumeText(r)
 	case strings.HasPrefix(requestPath, "/browse"):
 		// Host file browser request
 		volumeIDParameter, found := r.URL.Query()["volumeID"]
@@ -234,6 +263,15 @@ func (transport *Transport) proxyAgentRequest(r *http.Request, unversionedPath s
 			}
 		}
 
+		if registryID != 0 {
+			access, err := transport.createRegistryAccessContext(r)
+			if err != nil {
+				return nil, err
+			}
+			if !access.isAdmin && !security.AuthorizedRegistryAccess(registry, access.user, access.teamMemberships, transport.endpoint.ID) {
+				return utils.WriteAccessDeniedResponse()
+			}
+		}
 		if registry.Type != portainer.DockerHubRegistry {
 			return nil, errors.New("Invalid registry type")
 		}
@@ -629,6 +667,13 @@ func (transport *Transport) restrictedResourceOperation(request *http.Request, r
 	if tokenData.Role == portainer.AdministratorRole {
 		return transport.executeDockerRequest(request)
 	}
+	access, err := transport.standaloneAccess(request)
+	if err != nil {
+		return nil, err
+	}
+	if access.EnvironmentAdmin() {
+		return transport.executeRestrictedContainerRequest(request, dockerResourceID, resourceType)
+	}
 
 	if volumeBrowseRestrictionCheck {
 		securitySettings, err := transport.fetchEndpointSecuritySettings()
@@ -655,10 +700,10 @@ func (transport *Transport) restrictedResourceOperation(request *http.Request, r
 
 	resourceControl := authorization.GetResourceControlByResourceIDAndType(resourceID, resourceType, resourceControls)
 	if resourceControl != nil {
-		if !authorization.UserCanAccessResource(tokenData.ID, userTeamIDs, resourceControl) {
+		if !roleauth.StandaloneResourceAccess(access, tokenData.ID, userTeamIDs, resourceControl) {
 			return utils.WriteAccessDeniedResponse()
 		}
-		return transport.executeDockerRequest(request)
+		return transport.executeRestrictedContainerRequest(request, dockerResourceID, resourceType)
 	}
 
 	client, err := transport.dockerClientFactory.CreateClient(transport.endpoint, request.Header.Get(portainer.PortainerAgentTargetHeader), nil)
@@ -676,10 +721,10 @@ func (transport *Transport) restrictedResourceOperation(request *http.Request, r
 
 	resourceControl = authorization.GetResourceControlByResourceIDAndType(resourceID, resourceType, resourceControls)
 	if resourceControl != nil {
-		if !authorization.UserCanAccessResource(tokenData.ID, userTeamIDs, resourceControl) {
+		if !roleauth.StandaloneResourceAccess(access, tokenData.ID, userTeamIDs, resourceControl) {
 			return utils.WriteAccessDeniedResponse()
 		}
-		return transport.executeDockerRequest(request)
+		return transport.executeRestrictedContainerRequest(request, dockerResourceID, resourceType)
 	}
 
 	// If we still can't find the RC by provided ID or "real" (docker-extracted) ID
@@ -693,11 +738,11 @@ func (transport *Transport) restrictedResourceOperation(request *http.Request, r
 		return nil, err
 	}
 
-	if inheritedResourceControl == nil || !authorization.UserCanAccessResource(tokenData.ID, userTeamIDs, inheritedResourceControl) {
+	if !roleauth.StandaloneResourceAccess(access, tokenData.ID, userTeamIDs, inheritedResourceControl) {
 		return utils.WriteAccessDeniedResponse()
 	}
 
-	return transport.executeDockerRequest(request)
+	return transport.executeRestrictedContainerRequest(request, dockerResourceID, resourceType)
 }
 
 func getDockerResourceUUID(client *dockerclient.Client, resourceType portainer.ResourceControlType, resourceId string) (string, error) {
@@ -892,7 +937,13 @@ func (transport *Transport) administratorOperation(request *http.Request) (*http
 	}
 
 	if tokenData.Role != portainer.AdministratorRole {
-		return utils.WriteAccessDeniedResponse()
+		access, err := transport.standaloneAccess(request)
+		if err != nil {
+			return nil, err
+		}
+		if !access.EnvironmentAdmin() {
+			return utils.WriteAccessDeniedResponse()
+		}
 	}
 
 	return transport.executeDockerRequest(request)
@@ -967,6 +1018,11 @@ func (transport *Transport) createOperationContext(request *http.Request) (*rest
 	}
 
 	operationContext.userTeamIDs = authorization.TeamIDs(teamMemberships)
+	operationContext.standaloneAccess, err = transport.standaloneAccess(request)
+	if err != nil {
+		return nil, err
+	}
+	operationContext.isAdmin = operationContext.standaloneAccess.EnvironmentAdmin()
 
 	return operationContext, nil
 }
@@ -977,7 +1033,22 @@ func (transport *Transport) isAdminOrEndpointAdmin(request *http.Request) (bool,
 		return false, err
 	}
 
-	return tokenData.Role == portainer.AdministratorRole, nil
+	if tokenData.Role == portainer.AdministratorRole {
+		return true, nil
+	}
+	access, err := transport.standaloneAccess(request)
+	return access.EnvironmentAdmin(), err
+}
+
+func (transport *Transport) standaloneAccess(r *http.Request) (*roleauth.StandaloneAccess, error) {
+	if !roleauth.SupportsStandaloneRoles(transport.endpoint) {
+		return nil, nil
+	}
+	endpoint, err := transport.dataStore.Endpoint().Endpoint(transport.endpoint.ID)
+	if err != nil {
+		return nil, err
+	}
+	return security.EndpointStandaloneAccess(r, transport.dataStore, endpoint)
 }
 
 func (transport *Transport) fetchEndpointSecuritySettings() (*portainer.EndpointSecuritySettings, error) {

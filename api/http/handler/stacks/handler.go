@@ -20,6 +20,7 @@ import (
 	"github.com/portainer/portainer/api/stacks/deployments"
 	"github.com/portainer/portainer/api/stacks/stackutils"
 	"github.com/portainer/portainer/api/stacks/teardown"
+	roleauth "github.com/portainer/portainer/pkg/authorization"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 
 	"github.com/docker/docker/api/types"
@@ -32,6 +33,8 @@ import (
 type Handler struct {
 	stackCreationMutex *sync.Mutex
 	stackDeletionMutex *sync.Mutex
+	stackControlsMutex sync.Mutex
+	stackMutationLocks map[portainer.StackID]*stackMutationLock
 	requestBouncer     security.BouncerService
 	*mux.Router
 	DataStore               dataservices.DataStore
@@ -67,35 +70,52 @@ func NewHandler(bouncer security.BouncerService, teardownService teardown.Servic
 		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackCreate))).Methods(http.MethodPost)
 	h.Handle("/stacks",
 		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackList))).Methods(http.MethodGet)
+	h.Handle("/stacks/vault/mappings", bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.vaultInventory))).Methods(http.MethodGet)
+	h.Handle("/stacks/{id}/vault", bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackView, h.stackVaultGet))).Methods(http.MethodGet)
+	h.Handle("/stacks/{id}/vault", bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackView, h.stackVaultUpdate))).Methods(http.MethodPut)
+	h.Handle("/stacks/{id}/vault/template", bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackView, h.stackVaultTemplate))).Methods(http.MethodGet)
 	h.Handle("/stacks/{id}",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackInspect))).Methods(http.MethodGet)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackView, h.stackInspect))).Methods(http.MethodGet)
 	h.Handle("/stacks/{id}",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackDelete))).Methods(http.MethodDelete)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackEdit, h.stackDelete))).Methods(http.MethodDelete)
 	h.Handle("/stacks/{id}/associate",
-		bouncer.AdminAccess(httperror.LoggerHandler(h.stackAssociate))).Methods(http.MethodPut)
+		bouncer.AdminAccess(h.stackAccess(portainer.StackEdit, h.stackAssociate))).Methods(http.MethodPut)
 	h.Handle("/stacks/name/{name}",
 		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackDeleteKubernetesByName))).Methods(http.MethodDelete)
 	h.Handle("/stacks/{id}",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackUpdate))).Methods(http.MethodPut)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackEdit, h.stackUpdate))).Methods(http.MethodPut)
 	h.Handle("/stacks/{id}/git",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackUpdateGit))).Methods(http.MethodPost)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackEdit, h.stackUpdateGit))).Methods(http.MethodPost)
 	h.Handle("/stacks/{id}/git/redeploy",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackGitRedeploy))).Methods(http.MethodPut)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackDeploy, h.stackGitRedeploy))).Methods(http.MethodPut)
 	h.Handle("/stacks/{id}/file",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackFile))).Methods(http.MethodGet)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackView, h.stackFile))).Methods(http.MethodGet)
 	h.Handle("/stacks/{id}/migrate",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackMigrate))).Methods(http.MethodPost)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackEdit, h.stackMigrate))).Methods(http.MethodPost)
 	h.Handle("/stacks/{id}/start",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackStart))).Methods(http.MethodPost)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackDeploy, h.stackStart))).Methods(http.MethodPost)
 	h.Handle("/stacks/{id}/stop",
-		bouncer.AuthenticatedAccess(httperror.LoggerHandler(h.stackStop))).Methods(http.MethodPost)
+		bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackDeploy, h.stackStop))).Methods(http.MethodPost)
 	h.Handle("/stacks/webhooks/{webhookID}",
 		bouncer.PublicAccess(httperror.LoggerHandler(h.webhookInvoke))).Methods(http.MethodPost)
+
+	h.Handle("/stacks/{id}/controls", bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackView, h.stackControlsGet))).Methods(http.MethodGet)
+	h.Handle("/stacks/{id}/policy", bouncer.AdminAccess(h.stackAccess(portainer.StackView, h.stackPolicyUpdate))).Methods(http.MethodPut)
+	h.Handle("/stacks/{id}/configurations/targets", bouncer.AdminAccess(h.stackAccess(portainer.StackView, h.stackConfigTargets))).Methods(http.MethodPut)
+	h.Handle("/stacks/{id}/configurations", bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackConfigUpload, h.stackConfigUpload))).Methods(http.MethodPost)
+	h.Handle("/stacks/{id}/configurations/{revision}/content", bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackView, h.stackConfigContent))).Methods(http.MethodGet)
+	h.Handle("/stacks/{id}/configurations/{revision}/apply", bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackConfigApply, h.stackConfigApply))).Methods(http.MethodPost)
+	h.Handle("/stacks/{id}/configurations/{revision}/rollback", bouncer.AuthenticatedAccess(h.stackAccess(portainer.StackConfigApply, h.stackConfigApply))).Methods(http.MethodPost)
+	h.Handle("/stacks/{id}/configurations/recover", bouncer.AdminAccess(h.stackAccess(portainer.StackView, h.stackConfigRecover))).Methods(http.MethodPost)
 
 	return h
 }
 
 func (handler *Handler) userCanAccessStack(securityContext *security.RestrictedRequestContext, resourceControl *portainer.ResourceControl) (bool, error) {
+	if securityContext.StandaloneRole != "" && (resourceControl == nil || strings.HasPrefix(resourceControl.ResourceID, fmt.Sprintf("%d_", securityContext.RoleEndpointID))) {
+		access := &roleauth.StandaloneAccess{Role: securityContext.StandaloneRole, Explicit: true}
+		return roleauth.StandaloneResourceAccess(access, securityContext.UserID, authorization.TeamIDs(securityContext.UserMemberships), resourceControl), nil
+	}
 	user, err := handler.DataStore.User().Read(securityContext.UserID)
 	if err != nil {
 		return false, err
@@ -132,6 +152,9 @@ func (handler *Handler) userCanCreateStack(securityContext *security.RestrictedR
 
 // if stack management is disabled for non admins and the user isn't an admin, then return false. Otherwise return true
 func (handler *Handler) userCanManageStacks(securityContext *security.RestrictedRequestContext, endpoint *portainer.Endpoint) (bool, error) {
+	if endpoint != nil && securityContext.RoleEndpointID == endpoint.ID && securityContext.StandaloneRole == portainer.StandaloneEnvironmentAdmin {
+		return true, nil
+	}
 	// When the endpoint is deleted, stacks that the deleted endpoint created will be tagged as an orphan stack
 	// An orphan stack can be adopted by admins
 	if endpoint == nil {

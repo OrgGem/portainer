@@ -12,6 +12,7 @@ import (
 	"github.com/portainer/portainer/api/http/client"
 	"github.com/portainer/portainer/api/internal/endpointutils"
 	"github.com/portainer/portainer/api/pendingactions/handlers"
+	"github.com/portainer/portainer/pkg/authorization"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 	"github.com/portainer/portainer/pkg/libhttp/response"
@@ -56,7 +57,7 @@ type endpointUpdatePayload struct {
 }
 
 func (payload *endpointUpdatePayload) Validate(r *http.Request) error {
-	return nil
+	return authorization.ValidateStandalonePolicies(payload.UserAccessPolicies, payload.TeamAccessPolicies)
 }
 
 // @id EndpointUpdate

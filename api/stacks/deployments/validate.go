@@ -10,12 +10,12 @@ import (
 	"github.com/docker/docker/client"
 )
 
-func ValidateStackForUser(stack *portainer.Stack, endpoint *portainer.Endpoint, user *portainer.User, deployer BaseStackDeployer, fileService portainer.FileService) error {
+func ValidateStackForUser(stack *portainer.Stack, endpoint *portainer.Endpoint, user *portainer.User, deployer BaseStackDeployer, fileService portainer.FileService, scopedAdmin ...bool) error {
 	if stack.Type != portainer.DockerComposeStack && stack.Type != portainer.DockerSwarmStack {
 		return nil
 	}
 
-	if stackutils.UserIsAdminOrEndpointAdmin(user) {
+	if stackutils.UserIsAdminOrEndpointAdmin(user) || (len(scopedAdmin) > 0 && scopedAdmin[0]) {
 		return nil
 	}
 

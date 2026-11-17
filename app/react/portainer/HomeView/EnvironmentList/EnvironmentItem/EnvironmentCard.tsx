@@ -1,5 +1,6 @@
 import { Clock } from 'lucide-react';
 
+import { ResourceUsagePanel } from '@/react/docker/components/ResourceUsage/ResourceUsage';
 import { isoDateFromTimestamp } from '@/portainer/filters/filters';
 import {
   type Environment,
@@ -111,8 +112,11 @@ export function EnvironmentCard({
       Buttons are extracted out of the main button because it causes errors with react and accessibility issues
       see https://stackoverflow.com/questions/66409964/warning-validatedomnesting-a-cannot-appear-as-a-descendant-of-a
       */}
-      <div className="absolute inset-y-0 right-0 flex w-56 justify-end">
+      <div className="absolute right-0 top-0 flex w-56 justify-end">
         <EditButtons environment={environment} />
+      </div>
+      <div className="px-5 pb-2">
+        <ResourceUsagePanel environment={environment} />
       </div>
     </div>
   );

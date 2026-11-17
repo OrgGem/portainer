@@ -59,6 +59,7 @@ export interface TeamResourceAccess {
 }
 
 export interface ResourceControlResponse {
+  StackPolicy?: import('@/react/docker/stacks/ItemView/StackControls/types').Policy;
   Id: number;
   Type: ResourceControlType;
   ResourceId: ResourceId;

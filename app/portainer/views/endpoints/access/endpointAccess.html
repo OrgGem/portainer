@@ -44,7 +44,7 @@
 </div>
 
 <por-access-management
-  ng-if="ctrl.endpoint && ctrl.group"
+  ng-if="ctrl.endpoint && ctrl.group && ctrl.endpoint.Type !== 1 && ctrl.endpoint.Type !== 2"
   access-controlled-entity="ctrl.endpoint"
   action-in-progress="ctrl.state.actionInProgress"
   entity-type="endpoint"
@@ -53,3 +53,5 @@
   limited-feature="ctrl.limitedFeature"
 >
 </por-access-management>
+
+<standalone-access-management ng-if="ctrl.endpoint.Type === 1 || ctrl.endpoint.Type === 2" entity-id="ctrl.endpoint.Id" scope="'endpoint'"></standalone-access-management>

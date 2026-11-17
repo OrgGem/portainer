@@ -130,6 +130,9 @@ func (handler *Handler) stackMigrate(w http.ResponseWriter, r *http.Request) *ht
 		return httperror.InternalServerError("Unable to find an endpoint with the specified identifier inside the database", err)
 	}
 
+	if err := handler.requestBouncer.AuthorizedEndpointOperation(r, targetEndpoint); err != nil {
+		return httperror.Forbidden("Target environment access denied", err)
+	}
 	stack.EndpointID = portainer.EndpointID(payload.EndpointID)
 	if payload.SwarmID != "" {
 		stack.SwarmID = payload.SwarmID

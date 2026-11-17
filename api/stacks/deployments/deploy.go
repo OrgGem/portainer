@@ -47,6 +47,17 @@ func RedeployWhenChanged(ctx context.Context, stackID portainer.StackID, deploye
 	if stack.Status == portainer.StackStatusInactive {
 		return nil
 	}
+	// Public hooks and scheduled Git deployments do not carry an authorized
+	// stack action. They must not create arbitrary containers on a protected daemon.
+	if stack.Type == portainer.DockerComposeStack || stack.Type == portainer.DockerSwarmStack {
+		protected, err := security.EndpointHasUnattendedRestrictions(datastore, stack.EndpointID)
+		if err != nil {
+			return err
+		}
+		if protected {
+			return security.ErrStackDockerAccessDenied
+		}
+	}
 
 	// Webhook
 	if stack.AutoUpdate != nil && stack.AutoUpdate.Webhook != "" {

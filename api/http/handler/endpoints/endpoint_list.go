@@ -117,7 +117,14 @@ func (handler *Handler) endpointList(w http.ResponseWriter, r *http.Request) *ht
 
 		endpointutils.UpdateEdgeEndpointHeartbeat(&paginatedEndpoints[idx], settings)
 
-		if !query.excludeSnapshots {
+		snapshotVisible, err := handler.roleSnapshotVisible(r, &paginatedEndpoints[idx])
+		if err != nil {
+			return httperror.InternalServerError("Unable to read role policy", err)
+		}
+		if !snapshotVisible {
+			paginatedEndpoints[idx].Snapshots = nil
+		}
+		if !query.excludeSnapshots && snapshotVisible {
 			if err := handler.SnapshotService.FillSnapshotData(&paginatedEndpoints[idx], false); err != nil {
 				return httperror.InternalServerError("Unable to add snapshot data", err)
 			}

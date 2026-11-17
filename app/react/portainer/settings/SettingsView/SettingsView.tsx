@@ -16,6 +16,7 @@ import { HiddenContainersPanel } from './HiddenContainersPanel/HiddenContainersP
 import { KubeSettingsPanel } from './KubeSettingsPanel';
 import { SSLSettingsPanelWrapper } from './SSLSettingsPanel/SSLSettingsPanel';
 import { ExperimentalFeatures } from './ExperimentalFeatures';
+import { BuildPolicyPanel } from './BuildPolicyPanel';
 
 export function SettingsView() {
   const settingsQuery = useSettings();
@@ -43,6 +44,7 @@ export function SettingsView() {
             />
 
             <KubeSettingsPanel settings={settingsQuery.data} />
+            <BuildPolicyPanel policy={settingsQuery.data.ComposeBuildPolicy} />
           </>
         )}
 

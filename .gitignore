@@ -20,3 +20,7 @@ go.work.sum
 
 .vitest
 
+# Machine-specific deployment receipt (credentials live outside the repository).
+/deploy/standalone/LOCALHOST.md
+__pycache__/
+

@@ -31,6 +31,7 @@ import (
 type (
 	// AccessPolicy represent a policy that can be associated to a user or team
 	AccessPolicy struct {
+		StandaloneRole StandaloneRole `json:"StandaloneRole,omitempty"`
 		// Role identifier. Reference the role that will be associated to this access policy
 		RoleID RoleID `json:"RoleId" example:"1" validate:"required"`
 		// Namespaces is a list of namespaces that this access policy applies to. Only used for namespaced level roles
@@ -1071,6 +1072,7 @@ type (
 
 	// ResourceControl represent a reference to a Docker resource with specific access controls
 	ResourceControl struct {
+		StackPolicy *StackAccessPolicy `json:"StackPolicy,omitempty"`
 		// ResourceControl Identifier
 		ID ResourceControlID `json:"Id" example:"1"`
 		// Docker resource identifier on which access control will be applied.\
@@ -1104,6 +1106,7 @@ type (
 	// Role represents a set of authorizations that can be associated to a user or
 	// to a team.
 	Role struct {
+		StandalonePolicy *StandaloneRolePolicy `json:"StandalonePolicy,omitempty"`
 		// Role Identifier
 		ID RoleID `json:"Id" example:"1"`
 		// Role name
@@ -1179,6 +1182,7 @@ type (
 
 	// Settings represents the application settings
 	Settings struct {
+		ComposeBuildPolicy *ComposeBuildPolicy `json:"ComposeBuildPolicy,omitempty"`
 		// URL to a logo that will be displayed on the login page as well as on top of the sidebar. Will use default Portainer logo when value is empty string
 		LogoURL string `json:"LogoURL" example:"https://mycompany.mydomain.tld/logo.png"`
 		// A list of label name & value that will be used to hide containers when querying containers
@@ -1270,6 +1274,8 @@ type (
 
 	// Stack represents a Docker stack created via docker stack deploy
 	Stack struct {
+		VaultMappings *StackVaultMappings `json:"VaultMappings,omitempty"`
+		Configuration *StackConfiguration `json:"Configuration,omitempty"`
 		// Stack Identifier
 		ID StackID `json:"Id" example:"1"`
 		// Stack name
@@ -1625,7 +1631,8 @@ type (
 		// Deprecated in DBVersion == 25
 		PortainerAuthorizations Authorizations `swaggerignore:"true"`
 		// Deprecated in DBVersion == 25
-		EndpointAuthorizations EndpointAuthorizations `swaggerignore:"true"`
+		EndpointAuthorizations  EndpointAuthorizations        `swaggerignore:"true"`
+		StandaloneEndpointRoles map[EndpointID]StandaloneRole `json:"StandaloneEndpointRoles,omitempty"`
 	}
 
 	// UserAccessPolicies represent the association of an access policy and a user
@@ -1723,6 +1730,9 @@ type (
 
 	ComposeUpOptions struct {
 		ComposeOptions
+		// ConfigOnly recreates only selected services using their running image IDs.
+		ConfigOnly    bool
+		ServiceImages map[string]string
 
 		// ForceRecreate forces to recreate containers
 		ForceRecreate bool

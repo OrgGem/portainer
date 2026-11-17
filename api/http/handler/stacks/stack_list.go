@@ -9,6 +9,7 @@ import (
 	httperrors "github.com/portainer/portainer/api/http/errors"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/internal/authorization"
+	roleauth "github.com/portainer/portainer/pkg/authorization"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 	"github.com/portainer/portainer/pkg/libhttp/response"
@@ -78,7 +79,45 @@ func (handler *Handler) stackList(w http.ResponseWriter, r *http.Request) *httpe
 
 		userTeamIDs := authorization.TeamIDs(securityContext.UserMemberships)
 
-		stacks = authorization.FilterAuthorizedStacks(stacks, user.ID, userTeamIDs)
+		visible := make([]portainer.Stack, 0, len(stacks))
+		for _, stack := range stacks {
+			var endpoint *portainer.Endpoint
+			for i := range endpoints {
+				if endpoints[i].ID == stack.EndpointID {
+					endpoint = &endpoints[i]
+					break
+				}
+			}
+			if endpoint == nil {
+				continue
+			}
+			access, err := roleauth.StandaloneAccessForUser(handler.DataStore, user.ID, endpoint)
+			if err != nil {
+				return httperror.InternalServerError("Unable to resolve stack environment access", err)
+			}
+			if access == nil {
+				continue
+			}
+			if access.Explicit {
+				policy, err := roleauth.ReadStandalonePolicy(handler.DataStore, access.Role)
+				if err != nil {
+					return httperror.InternalServerError("Unable to read role policy", err)
+				}
+				if !roleauth.RoleFeatureAllowed(policy, access.Role, "stacks.view") {
+					continue
+				}
+				if !roleauth.RoleFeatureAllowed(policy, access.Role, "vault.view") {
+					stack.VaultMappings = nil
+				}
+			}
+			if access.Explicit && (!roleauth.SupportsStandaloneRoles(endpoint) || stack.Type != portainer.DockerComposeStack) {
+				continue
+			}
+			if roleauth.StandaloneResourceAccess(access, user.ID, userTeamIDs, stack.ResourceControl) {
+				visible = append(visible, stack)
+			}
+		}
+		stacks = visible
 	}
 
 	err = handler.DataStore.ViewTx(func(tx dataservices.DataStoreTx) error {

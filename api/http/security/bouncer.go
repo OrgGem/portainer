@@ -55,6 +55,8 @@ type (
 	// RestrictedRequestContext is a data structure containing information
 	// used in AuthenticatedAccess
 	RestrictedRequestContext struct {
+		RoleEndpointID  portainer.EndpointID
+		StandaloneRole  portainer.StandaloneRole
 		IsAdmin         bool
 		IsTeamLeader    bool
 		UserID          portainer.UserID
@@ -182,6 +184,14 @@ func (bouncer *RequestBouncer) AuthorizedEndpointOperation(r *http.Request, endp
 
 	if tokenData.Role == portainer.AdministratorRole {
 		return nil
+	}
+	if err := CheckStandaloneEndpointRole(r, bouncer.dataStore, endpoint, false); err != nil {
+		return err
+	}
+	if !isControlledStackRoute(r, endpoint.ID) {
+		if err := CheckStackDockerAccess(r, bouncer.dataStore, endpoint.ID); err != nil {
+			return err
+		}
 	}
 
 	memberships, err := bouncer.dataStore.TeamMembership().TeamMembershipsByUserID(tokenData.ID)

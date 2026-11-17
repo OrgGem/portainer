@@ -24,5 +24,7 @@ func NewHandler(bouncer security.BouncerService) *Handler {
 	h.Handle("/roles",
 		bouncer.AdminAccess(httperror.LoggerHandler(h.roleList))).Methods(http.MethodGet)
 
+	h.Handle("/roles/configuration", bouncer.AdminAccess(httperror.LoggerHandler(h.roleConfiguration))).Methods(http.MethodGet)
+	h.Handle("/roles/{id}/policy", bouncer.AdminAccess(httperror.LoggerHandler(h.rolePolicyUpdate))).Methods(http.MethodPut)
 	return h
 }

@@ -26,6 +26,8 @@ type StackDeployer interface {
 
 type stackDeployer struct {
 	lock                *sync.Mutex
+	composeLockMutex    sync.Mutex
+	composeLocks        map[portainer.StackID]*composeDeploymentLock
 	swarmStackManager   portainer.SwarmStackManager
 	composeStackManager portainer.ComposeStackManager
 	kubernetesDeployer  portainer.KubernetesDeployer
@@ -59,8 +61,8 @@ func (d *stackDeployer) DeploySwarmStack(ctx context.Context, stack *portainer.S
 }
 
 func (d *stackDeployer) DeployComposeStack(ctx context.Context, stack *portainer.Stack, endpoint *portainer.Endpoint, registries []portainer.Registry, prune, forcePullImage, forceRecreate bool) error {
-	d.lock.Lock()
-	defer d.lock.Unlock()
+	unlock := d.lockComposeDeployment(stack.ID)
+	defer unlock()
 
 	options := portainer.ComposeOptions{Registries: registries}
 
@@ -79,8 +81,8 @@ func (d *stackDeployer) DeployComposeStack(ctx context.Context, stack *portainer
 }
 
 func (d *stackDeployer) UndeployComposeStack(ctx context.Context, stack *portainer.Stack, endpoint *portainer.Endpoint) error {
-	d.lock.Lock()
-	defer d.lock.Unlock()
+	unlock := d.lockComposeDeployment(stack.ID)
+	defer unlock()
 
 	return d.composeStackManager.Down(ctx, stack, endpoint)
 }

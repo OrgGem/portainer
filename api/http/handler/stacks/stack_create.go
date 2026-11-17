@@ -44,6 +44,9 @@ func (handler *Handler) stackCreate(w http.ResponseWriter, r *http.Request) *htt
 		return httperror.InternalServerError("Unable to retrieve user info from request context", err)
 	}
 
+	if err := security.CheckStandaloneEndpointRole(r, handler.DataStore, endpoint, false); err != nil {
+		return httperror.Forbidden("Environment role does not permit stack creation", err)
+	}
 	canManage, err := handler.userCanManageStacks(securityContext, endpoint)
 	if err != nil {
 		return httperror.InternalServerError("Unable to verify user authorizations to validate stack deletion", err)

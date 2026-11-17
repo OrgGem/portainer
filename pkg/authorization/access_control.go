@@ -112,6 +112,9 @@ func UserCanAccessResource(userID portainer.UserID, userTeamIDs []portainer.Team
 	if resourceControl == nil {
 		return false
 	}
+	if !StackPolicyAllows(resourceControl.StackPolicy, userID, userTeamIDs, portainer.StackView) {
+		return false
+	}
 
 	for _, authorizedUserAccess := range resourceControl.UserAccesses {
 		if userID == authorizedUserAccess.UserID {

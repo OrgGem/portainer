@@ -52,6 +52,10 @@ const ngModule = angular
   .component(
     'agentVolumeBrowserReact',
     r2a(withUIRouter(withCurrentUser(AgentVolumeBrowser)), [
+      'endpointId',
+      'volumeId',
+      'nodeName',
+      'onFileSaved',
       'dataset',
       'isRoot',
       'isUploadAllowed',

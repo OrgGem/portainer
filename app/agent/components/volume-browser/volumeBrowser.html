@@ -10,4 +10,8 @@
   is-upload-allowed="$ctrl.isUploadEnabled"
   on-file-selected-for-upload="($ctrl.onFileSelectedForUpload)"
   relative-path="$ctrl.state.path"
+  endpoint-id="$ctrl.endpointId"
+  volume-id="$ctrl.volumeId"
+  node-name="$ctrl.nodeName"
+  on-file-saved="($ctrl.refreshList)"
 ></agent-volume-browser-react>

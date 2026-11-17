@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { Home } from 'lucide-react';
+import { Home, KeyRound } from 'lucide-react';
 
 import { useIsEdgeAdmin, useIsPureAdmin } from '@/react/hooks/useUser';
 import { useIsCurrentUserTeamLeader } from '@/portainer/users/queries';
@@ -70,6 +70,13 @@ function InnerSidebar() {
             />
 
             <EnvironmentSidebar />
+
+            <SidebarItem
+              to="portainer.vaultMappings"
+              icon={KeyRound}
+              label="Vault mappings"
+              data-cy="portainerSidebar-vault-mappings"
+            />
 
             <AppDeliverySidebar />
 

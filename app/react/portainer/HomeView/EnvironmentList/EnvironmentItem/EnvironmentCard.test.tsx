@@ -18,7 +18,13 @@ import { EnvironmentCard } from './EnvironmentCard';
 function renderCard(env: Environment, groupName?: string, isAdmin = false) {
   const user = new UserViewModel({ Username: 'test', Role: isAdmin ? 1 : 2 });
 
-  server.use(http.get('/api/tags', () => HttpResponse.json([])));
+  server.use(
+    http.get('/api/tags', () => HttpResponse.json([])),
+    http.get(
+      '/api/endpoints/:id/metrics',
+      () => new HttpResponse(null, { status: 204 })
+    )
+  );
 
   const Wrapped = withTestQueryProvider(
     withTestRouter(withUserProvider(EnvironmentCard, user))

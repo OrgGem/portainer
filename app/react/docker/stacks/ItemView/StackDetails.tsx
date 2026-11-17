@@ -1,12 +1,13 @@
 import { useRouter } from '@uirouter/react';
-import { Edit2, List } from 'lucide-react';
+import { Edit2, List, Settings } from 'lucide-react';
 import _ from 'lodash';
 import { useMemo } from 'react';
 
 import { useEnvironmentId } from '@/react/hooks/useEnvironmentId';
-import { Stack } from '@/react/common/stacks/types';
+import { Stack, StackType } from '@/react/common/stacks/types';
 import { useStackFile } from '@/react/common/stacks/queries/useStackFile';
 import { isGitConfigDiverged } from '@/react/portainer/gitops/utils';
+import { StackVaultTab } from '@/react/portainer/vault-mappings/StackVaultTab';
 
 import { WidgetBody, Widget } from '@@/Widget';
 import { Tab, useCurrentTabIndex, WidgetTabs } from '@@/Widget/WidgetTabs';
@@ -17,6 +18,8 @@ import { extractContainerNames } from '../common/container-names';
 
 import { StackEditorTab } from './StackEditorTab/StackEditorTab';
 import { StackInfoTab } from './StackInfoTab/StackInfoTab';
+import { ConfigurationTab } from './StackControls/ConfigurationTab';
+import { useStackAction } from './StackControls/queries';
 
 function showEditorTab(
   isExternal: boolean,
@@ -48,6 +51,8 @@ export function StackDetails({
   stack: Stack | undefined;
 }) {
   const router = useRouter();
+  const canEdit = useStackAction(stack, 'edit');
+  const canDeploy = useStackAction(stack, 'deploy');
   const envId = useEnvironmentId();
   const containerNamesQuery = useContainers(envId, {
     select: (containers) =>
@@ -122,10 +127,47 @@ export function StackDetails({
       selectedTabParam: 'editor',
     };
 
-    const withEditor = showEditorTab(isExternal, stack, fileQuery.isLoading);
-    return withEditor ? [infoTab, editorTab] : [infoTab];
+    const withEditor =
+      canEdit &&
+      canDeploy &&
+      showEditorTab(isExternal, stack, fileQuery.isLoading);
+    const result = withEditor ? [infoTab, editorTab] : [infoTab];
+    if (
+      stack?.Type === StackType.DockerCompose &&
+      !stack.GitConfig &&
+      !isOrphaned &&
+      !isExternal
+    ) {
+      result.push({
+        name: 'Configuration & permissions',
+        icon: Settings,
+        selectedTabParam: 'configuration',
+        widget: (
+          <Widget>
+            <WidgetBody>
+              <ConfigurationTab stack={stack} />
+            </WidgetBody>
+          </Widget>
+        ),
+      });
+      result.push({
+        name: 'Vault mappings',
+        icon: Settings,
+        selectedTabParam: 'vault',
+        widget: (
+          <Widget>
+            <WidgetBody>
+              <StackVaultTab stack={stack} />
+            </WidgetBody>
+          </Widget>
+        ),
+      });
+    }
+    return result;
   }, [
     envId,
+    canEdit,
+    canDeploy,
     isExternal,
     isOrphaned,
     isOrphanedRunning,

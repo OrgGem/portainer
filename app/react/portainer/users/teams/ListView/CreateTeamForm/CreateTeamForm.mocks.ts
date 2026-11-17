@@ -24,6 +24,7 @@ export function mockExampleData() {
         color: 'auto',
       },
       EndpointAuthorizations: {},
+      StandaloneEndpointRoles: undefined,
       PortainerAuthorizations: {
         PortainerDockerHubInspect: true,
         PortainerEndpointGroupInspect: true,
@@ -52,6 +53,7 @@ export function mockExampleData() {
         color: 'auto',
       },
       EndpointAuthorizations: {},
+      StandaloneEndpointRoles: undefined,
       PortainerAuthorizations: {
         PortainerDockerHubInspect: true,
         PortainerEndpointGroupInspect: true,

@@ -9,6 +9,7 @@ import (
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/internal/registryutils"
 	"github.com/portainer/portainer/api/stacks/stackutils"
+	"github.com/portainer/portainer/pkg/authorization"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -33,6 +34,10 @@ func CreateComposeStackDeploymentConfigTx(tx dataservices.DataStoreTx, securityC
 		return nil, fmt.Errorf("unable to load user information from the database: %w", err)
 	}
 
+	access, err := authorization.StandaloneAccessForUser(tx, user.ID, endpoint)
+	if err != nil {
+		return nil, err
+	}
 	registries, err := tx.Registry().ReadAll()
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve registries from the database: %w", err)
@@ -47,7 +52,7 @@ func CreateComposeStackDeploymentConfigTx(tx dataservices.DataStoreTx, securityC
 		endpoint:       endpoint,
 		registries:     filteredRegistries,
 		prune:          prune,
-		isAdmin:        securityContext.IsAdmin,
+		isAdmin:        securityContext.IsAdmin || (authorization.SupportsStandaloneRoles(endpoint) && access.EnvironmentAdmin()),
 		user:           user,
 		forcePullImage: forcePullImage,
 		ForceCreate:    forceCreate,
@@ -65,7 +70,7 @@ func (config *ComposeStackDeploymentConfig) Deploy(ctx context.Context) error {
 	}
 
 	if config.endpoint != nil {
-		if err := ValidateStackForUser(config.stack, config.endpoint, config.user, config.StackDeployer, config.FileService); err != nil {
+		if err := ValidateStackForUser(config.stack, config.endpoint, config.user, config.StackDeployer, config.FileService, config.isAdmin); err != nil {
 			return err
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/internal/registryutils"
 	"github.com/portainer/portainer/api/logs"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
@@ -44,6 +45,13 @@ func (handler *Handler) webhookExecute(w http.ResponseWriter, r *http.Request) *
 	endpointID := webhook.EndpointID
 	registryID := webhook.RegistryID
 	webhookType := webhook.WebhookType
+	protected, err := security.EndpointHasUnattendedRestrictions(handler.DataStore, endpointID)
+	if err != nil {
+		return httperror.InternalServerError("Unable to verify stack policies", err)
+	}
+	if protected {
+		return httperror.Forbidden("Public Docker webhooks are disabled on environments with stack policies or environment roles", security.ErrStackDockerAccessDenied)
+	}
 
 	endpoint, err := handler.DataStore.Endpoint().Endpoint(endpointID)
 	if handler.DataStore.IsErrObjectNotFound(err) {

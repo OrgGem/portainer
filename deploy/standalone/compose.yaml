@@ -1,0 +1,33 @@
+name: portainer-custom
+services:
+  portainer:
+    image: ${PORTAINER_IMAGE:-portainer-custom:2.45.3}
+    build:
+      context: ../..
+      dockerfile: deploy/standalone/Dockerfile
+    restart: unless-stopped
+    command: ["-H", "unix:///var/run/docker.sock"]
+    ports:
+      - "127.0.0.1:${PORTAINER_HTTPS_PORT:-9445}:9443"
+    environment:
+      PORTAINER_STACK_CONFIG_ROOT: ${STACK_CONFIG_ROOT:-/var/lib/portainer-stack-configs}
+      PORTAINER_METRICS_HOST_ROOT: /host
+      PORTAINER_METRICS_ENDPOINT_URL: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+      # Linux Docker host (the Linux VM on Docker Desktop), read-only metrics.
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          create_host_path: false
+      # Same absolute Linux path on the host and in Portainer is mandatory.
+      - type: bind
+        source: ${STACK_CONFIG_ROOT:-/var/lib/portainer-stack-configs}
+        target: ${STACK_CONFIG_ROOT:-/var/lib/portainer-stack-configs}
+        bind:
+          create_host_path: false
+volumes:
+  portainer_data:

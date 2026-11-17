@@ -10,6 +10,7 @@ import (
 	"github.com/portainer/portainer/api/internal/authorization"
 	"github.com/portainer/portainer/api/slicesx"
 	"github.com/portainer/portainer/api/stacks/stackutils"
+	roleauth "github.com/portainer/portainer/pkg/authorization"
 
 	"github.com/docker/docker/client"
 	"github.com/rs/zerolog/log"
@@ -167,11 +168,11 @@ func (transport *Transport) applyAccessControlOnResource(parameters *resourceOpe
 		return err
 	}
 
-	if resourceControl == nil && (executor.operationContext.isAdmin) {
+	if resourceControl == nil && (executor.operationContext.isAdmin || executor.operationContext.standaloneAccess.AllResources()) {
 		return utils.RewriteResponse(response, responseObject, http.StatusOK)
 	}
 
-	if executor.operationContext.isAdmin || (resourceControl != nil && authorization.UserCanAccessResource(executor.operationContext.userID, executor.operationContext.userTeamIDs, resourceControl)) {
+	if executor.operationContext.isAdmin || roleauth.StandaloneResourceAccess(executor.operationContext.standaloneAccess, executor.operationContext.userID, executor.operationContext.userTeamIDs, resourceControl) {
 		responseObject = decorateObject(responseObject, resourceControl)
 
 		return utils.RewriteResponse(response, responseObject, http.StatusOK)
@@ -262,14 +263,14 @@ func (transport *Transport) filterResourceList(parameters *resourceOperationPara
 		}
 
 		if resourceControl == nil {
-			if context.isAdmin {
+			if context.isAdmin || context.standaloneAccess.AllResources() {
 				filteredResourceData = append(filteredResourceData, resourceObject)
 			}
 
 			continue
 		}
 
-		if context.isAdmin || authorization.UserCanAccessResource(context.userID, context.userTeamIDs, resourceControl) {
+		if context.isAdmin || roleauth.StandaloneResourceAccess(context.standaloneAccess, context.userID, context.userTeamIDs, resourceControl) {
 			resourceObject = decorateObject(resourceObject, resourceControl)
 			filteredResourceData = append(filteredResourceData, resourceObject)
 		}

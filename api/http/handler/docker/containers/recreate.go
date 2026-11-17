@@ -45,6 +45,11 @@ func (handler *Handler) recreate(w http.ResponseWriter, r *http.Request) *httper
 		return httperror.Forbidden("Permission denied to force update service", err)
 	}
 
+	canonicalID, denied := handler.authorizeContainer(r, endpoint, containerID)
+	if denied != nil {
+		return denied
+	}
+	containerID = canonicalID
 	agentTargetHeader := r.Header.Get(portainer.PortainerAgentTargetHeader)
 
 	newContainer, err := handler.containerService.Recreate(context.TODO(), endpoint, containerID, payload.PullImage, "", agentTargetHeader)

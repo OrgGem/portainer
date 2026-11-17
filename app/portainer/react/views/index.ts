@@ -1,6 +1,7 @@
 import angular from 'angular';
 
 import { HomeView } from '@/react/portainer/HomeView';
+import { VaultMappingsView } from '@/react/portainer/vault-mappings/VaultMappingsView';
 import { withCurrentUser } from '@/react-tools/withCurrentUser';
 import { r2a } from '@/react-tools/react2angular';
 import { withReactQuery } from '@/react-tools/withReactQuery';
@@ -38,6 +39,10 @@ export const viewsModule = angular
   .component(
     'homeView',
     r2a(withUIRouter(withReactQuery(withCurrentUser(HomeView))), [])
+  )
+  .component(
+    'vaultMappingsView',
+    r2a(withUIRouter(withReactQuery(withCurrentUser(VaultMappingsView))), [])
   )
   .component(
     'createUserAccessToken',

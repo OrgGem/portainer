@@ -1,5 +1,5 @@
 import { CellContext } from '@tanstack/react-table';
-import { Download, Edit, Trash2 } from 'lucide-react';
+import { Download, Edit, FilePenLine, Trash2 } from 'lucide-react';
 
 import { Authorized } from '@/react/hooks/useUser';
 
@@ -30,6 +30,28 @@ export function ActionsCell({
           >
             Download
           </Button>
+        </Authorized>
+      )}
+      {!item.Dir && meta.onEditText && (
+        <Authorized authorizations="DockerAgentBrowsePut">
+          <Authorized authorizations="DockerAgentBrowseGet">
+            <Button
+              color="secondary"
+              size="xsmall"
+              icon={FilePenLine}
+              onClick={() => meta.onEditText?.(item)}
+              className="!m-0"
+              disabled={item.Size > 1024 * 1024}
+              title={
+                item.Size > 1024 * 1024
+                  ? 'Quick edit supports UTF-8 files up to 1 MiB'
+                  : 'Edit UTF-8 text'
+              }
+              data-cy={`docker-files-edit-text-${item.Name}`}
+            >
+              Edit text
+            </Button>
+          </Authorized>
         </Authorized>
       )}
       <Authorized authorizations="DockerAgentBrowseRename">

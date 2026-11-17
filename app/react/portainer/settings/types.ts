@@ -1,5 +1,12 @@
 import { TeamId } from '@/react/portainer/users/teams/types';
 
+export interface ComposeBuildPolicy {
+  CPUPercent: number;
+  MemoryPercent: number;
+  MaxConcurrentBuilds: number;
+  AutoConfigureBuilderCgroup: boolean;
+}
+
 export interface TLSConfiguration {
   TLS: boolean;
   TLSSkipVerify: boolean;
@@ -91,6 +98,7 @@ export interface DefaultRegistry {
 export interface ExperimentalFeatures {}
 
 export interface Settings {
+  ComposeBuildPolicy?: ComposeBuildPolicy;
   LogoURL: string;
   CustomLoginBanner: string;
   BlackListedLabels: Pair[];

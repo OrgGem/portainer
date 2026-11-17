@@ -14,7 +14,7 @@ const settingsStore = createPersistedStore(tableKey, {
 
 interface Props extends Omit<
   ComponentProps<typeof FilesTable>,
-  'isUploadAllowed' | 'tableState' | 'title'
+  'isUploadAllowed' | 'tableState' | 'title' | 'onEditText'
 > {
   relativePath: string;
 }

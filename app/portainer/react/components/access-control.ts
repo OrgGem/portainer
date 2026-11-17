@@ -9,9 +9,17 @@ import { PorAccessControlFormUserSelector } from '@/react/portainer/access-contr
 import { PorAccessManagementUsersSelector } from '@/react/portainer/access-control/AccessManagement/PorAccessManagementUsersSelector';
 import { AccessTypeSelector } from '@/react/portainer/access-control/EditDetails/AccessTypeSelector';
 import { AccessControlPanel } from '@/react/portainer/access-control';
+import { StandaloneAccessManagement } from '@/react/portainer/access-control/StandaloneAccessManagement/StandaloneAccessManagement';
 
 export const accessControlModule = angular
   .module('portainer.app.react.components.access-control', [])
+  .component(
+    'standaloneAccessManagement',
+    r2a(withUIRouter(withReactQuery(StandaloneAccessManagement)), [
+      'entityId',
+      'scope',
+    ])
+  )
   .component(
     'accessControlPanel',
     r2a(withUIRouter(withReactQuery(withCurrentUser(AccessControlPanel))), [

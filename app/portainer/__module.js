@@ -495,6 +495,11 @@ angular
       $stateRegistryProvider.register(group);
       $stateRegistryProvider.register(groupCreation);
       $stateRegistryProvider.register(home);
+      $stateRegistryProvider.register({
+        name: 'portainer.vaultMappings',
+        url: '/vault-mappings?environmentId&stackId&variable&path&key&service',
+        views: { 'content@': { component: 'vaultMappingsView' } },
+      });
       $stateRegistryProvider.register(gitopsBase);
       $stateRegistryProvider.register(workflows);
       $stateRegistryProvider.register(gitopsWorkflowDetail);

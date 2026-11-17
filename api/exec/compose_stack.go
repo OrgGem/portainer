@@ -11,6 +11,7 @@ import (
 	"github.com/portainer/portainer/api/filesystem"
 	"github.com/portainer/portainer/api/http/proxy"
 	"github.com/portainer/portainer/api/logs"
+	"github.com/portainer/portainer/api/stacks/stackconfig"
 	"github.com/portainer/portainer/api/stacks/stackutils"
 	"github.com/portainer/portainer/pkg/libstack"
 )
@@ -51,7 +52,22 @@ func (manager *ComposeStackManager) Up(ctx context.Context, stack *portainer.Sta
 	}
 
 	filePaths := stackutils.GetStackFilePaths(stack, true)
+	if stack.Configuration != nil {
+		if err := stackconfig.ValidateEndpoint(stack, endpoint); err != nil {
+			return err
+		}
+		override, err := stackconfig.WriteOverride(stack)
+		if err != nil {
+			return err
+		}
+		if override != "" {
+			defer os.Remove(override)
+			filePaths = append(filePaths, override)
+		}
+	}
 	if err = manager.deployer.Deploy(ctx, filePaths, libstack.DeployOptions{
+		ConfigOnly:    options.ConfigOnly,
+		ServiceImages: options.ServiceImages,
 		Options: libstack.Options{
 			WorkingDir:  stack.ProjectPath,
 			EnvFilePath: envFilePath,

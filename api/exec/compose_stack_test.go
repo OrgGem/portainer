@@ -59,7 +59,9 @@ func Test_createEnvFile(t *testing.T) {
 			if tt.expected != "" {
 				assert.Equal(t, filesystem.JoinPaths(tt.stack.ProjectPath, "stack.env"), result)
 
-				f, _ := os.Open(filesystem.JoinPaths(dir, "stack.env"))
+				f, err := os.Open(filesystem.JoinPaths(dir, "stack.env"))
+				require.NoError(t, err)
+				defer f.Close()
 				content, _ := io.ReadAll(f)
 
 				assert.Equal(t, tt.expected, string(content))
@@ -90,6 +92,7 @@ func Test_createEnvFile_mergesDefultAndInplaceEnvVars(t *testing.T) {
 
 	f, err := os.Open(filesystem.JoinPaths(dir, "stack.env"))
 	require.NoError(t, err)
+	defer f.Close()
 
 	content, err := io.ReadAll(f)
 	require.NoError(t, err)

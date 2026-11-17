@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/filesystem"
@@ -34,11 +35,17 @@ func init() {
 	})
 }
 
-func (c *ComposeDeployer) withComposeService(
+func (c *ComposeDeployer) withComposeService(ctx context.Context, files []string, options libstack.Options, fn func(api.Compose, *types.Project) error) error {
+	return c.withComposeClient(ctx, files, options, func(service api.Compose, project *types.Project, _ *command.DockerCli) error {
+		return fn(service, project)
+	})
+}
+
+func (c *ComposeDeployer) withComposeClient(
 	ctx context.Context,
 	filePaths []string,
 	options libstack.Options,
-	composeFn func(api.Compose, *types.Project) error,
+	composeFn func(api.Compose, *types.Project, *command.DockerCli) error,
 ) error {
 	return libstack.WithCli(ctx,
 		libstack.DockerCliOptions{Host: options.Host, Registries: options.Registries},
@@ -46,7 +53,7 @@ func (c *ComposeDeployer) withComposeService(
 			composeService := c.createComposeServiceFn(cli)
 
 			if len(filePaths) == 0 {
-				return composeFn(composeService, nil)
+				return composeFn(composeService, nil, cli)
 			}
 
 			project, err := createProject(ctx, filePaths, options)
@@ -66,16 +73,37 @@ func (c *ComposeDeployer) withComposeService(
 				composeService.MaxConcurrency(parallel)
 			}
 
-			return composeFn(composeService, project)
+			return composeFn(composeService, project, cli)
 		})
 }
 
 // Deploy creates and starts containers
 func (c *ComposeDeployer) Deploy(ctx context.Context, filePaths []string, options libstack.DeployOptions) error {
-	return c.withComposeService(ctx, filePaths, options.Options, func(composeService api.Compose, project *types.Project) error {
+	return c.withComposeClient(ctx, filePaths, options.Options, func(composeService api.Compose, project *types.Project, cli *command.DockerCli) error {
 		addServiceLabels(project, false, options.EdgeStackID)
 
 		project = project.WithoutUnnecessaryResources()
+		var selected []string
+		if options.ConfigOnly {
+			for name, image := range options.ServiceImages {
+				service, ok := project.Services[name]
+				if !ok || image == "" {
+					return fmt.Errorf("unknown configuration service or missing running image: %s", name)
+				}
+				service.Image, service.PullPolicy, service.Build = image, types.PullPolicyNever, nil
+				service.DependsOn = nil
+				project.Services[name] = service
+				selected = append(selected, name)
+			}
+			if len(selected) == 0 {
+				return errors.New("configuration deployment requires a selected service")
+			}
+			var err error
+			project, err = project.WithSelectedServices(selected, types.IgnoreDependencies)
+			if err != nil {
+				return err
+			}
+		}
 
 		opts := api.UpOptions{
 			Start: api.StartOptions{
@@ -85,6 +113,11 @@ func (c *ComposeDeployer) Deploy(ctx context.Context, filePaths []string, option
 		if options.ForceRecreate {
 			opts.Create.Recreate = api.RecreateForce
 		}
+		if options.ConfigOnly {
+			opts.Create.Services, opts.Start.Services = selected, selected
+			opts.Create.RecreateDependencies = api.RecreateNever
+			opts.Start.Wait, opts.Start.WaitTimeout = true, 90*time.Second
+		}
 
 		opts.Create.RemoveOrphans = options.RemoveOrphans
 		if removeOrphans, ok := project.Environment[cmdcompose.ComposeRemoveOrphans]; ok {
@@ -93,13 +126,20 @@ func (c *ComposeDeployer) Deploy(ctx context.Context, filePaths []string, option
 		if ignoreOrphans, ok := project.Environment[cmdcompose.ComposeIgnoreOrphans]; ok {
 			opts.Create.IgnoreOrphans = utils.StringToBool(ignoreOrphans)
 		}
+		if options.ConfigOnly {
+			opts.Create.RemoveOrphans, opts.Create.IgnoreOrphans = false, true
+		}
 
 		if options.AbortOnContainerExit {
 			opts.Start.OnExit = api.CascadeStop
 		}
 
-		if err := composeService.Build(ctx, project, api.BuildOptions{}); err != nil {
-			return fmt.Errorf("compose build operation failed: %w", err)
+		if !options.ConfigOnly {
+			cleanup, err := c.managedBuild(ctx, cli, composeService, project)
+			if err != nil {
+				return fmt.Errorf("compose build operation failed: %w", err)
+			}
+			defer cleanup()
 		}
 
 		if err := composeService.Up(ctx, project, opts); err != nil {
@@ -114,8 +154,19 @@ func (c *ComposeDeployer) Deploy(ctx context.Context, filePaths []string, option
 
 // Run runs the given service just once, without considering dependencies
 func (c *ComposeDeployer) Run(ctx context.Context, filePaths []string, serviceName string, options libstack.RunOptions) error {
-	return c.withComposeService(ctx, filePaths, options.Options, func(composeService api.Compose, project *types.Project) error {
+	return c.withComposeClient(ctx, filePaths, options.Options, func(composeService api.Compose, project *types.Project, cli *command.DockerCli) error {
 		addServiceLabels(project, true, 0)
+
+		var err error
+		project, err = project.WithSelectedServices([]string{serviceName}, types.IncludeDependencies)
+		if err != nil {
+			return err
+		}
+		cleanup, err := c.managedBuild(ctx, cli, composeService, project)
+		if err != nil {
+			return fmt.Errorf("compose build operation failed: %w", err)
+		}
+		defer cleanup()
 
 		for name, service := range project.Services {
 			if name == serviceName {

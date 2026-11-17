@@ -587,9 +587,10 @@ func TestTransport_proxyExecRequest_accessControl(t *testing.T) {
 	require.NoError(t, err)
 
 	srv, version := mockDockerAPIServer(t, RoutesDefinition{
-		{http.MethodGet, "/exec/" + execID + "/json"}:    container.ExecInspect{ExecID: execID, ContainerID: containerID},
-		{http.MethodPost, "/exec/" + execID + "/start"}:  struct{}{},
-		{http.MethodPost, "/exec/" + execID + "/resize"}: struct{}{},
+		{http.MethodGet, "/containers/" + containerID + "/json"}: container.InspectResponse{ContainerJSONBase: &container.ContainerJSONBase{ID: containerID, Name: "application"}},
+		{http.MethodGet, "/exec/" + execID + "/json"}:            container.ExecInspect{ExecID: execID, ContainerID: containerID},
+		{http.MethodPost, "/exec/" + execID + "/start"}:          struct{}{},
+		{http.MethodPost, "/exec/" + execID + "/resize"}:         struct{}{},
 	})
 	defer srv.Close()
 
@@ -842,6 +843,7 @@ func TestTransport_proxyContainerRequest(t *testing.T) {
 	}))
 
 	srv, version := mockDockerAPIServer(t, RoutesDefinition{
+		{http.MethodGet, "/containers/" + containerID + "/json"}:      container.InspectResponse{ContainerJSONBase: &container.ContainerJSONBase{ID: containerID, Name: "application"}},
 		{http.MethodPost, "/containers/" + containerID + "/start"}:    struct{}{},
 		{http.MethodGet, "/containers/" + containerID + "/attach/ws"}: struct{}{},
 		{http.MethodDelete, "/containers/" + containerID}:             struct{}{},
@@ -1060,6 +1062,7 @@ func TestTransport_ProxyDockerRequest_rejectsEncodedSeparator(t *testing.T) {
 
 	proxy := func(url string) (*http.Response, error) {
 		req := httptest.NewRequest(http.MethodGet, srv.URL+"/v"+version+url, nil)
+		req = req.WithContext(security.StoreTokenData(req, &portainer.TokenData{Role: portainer.AdministratorRole}))
 		require.NotNil(t, req)
 
 		return transport.ProxyDockerRequest(req)

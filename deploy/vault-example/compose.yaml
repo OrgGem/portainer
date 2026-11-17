@@ -1,0 +1,33 @@
+name: vault-app-example
+services:
+  app:
+    image: portainer-vault-app:example
+    build: .
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${DB_HOST:-database.internal}
+      VAULT_ADDR: ${VAULT_ADDR:?Set the HTTPS URL of your Vault server}
+      VAULT_CACERT: /run/secrets/vault_ca
+    ports:
+      - "127.0.0.1:${APP_PORT:-18080}:8080"
+    secrets:
+      - vault_role_id
+      - vault_secret_id
+      - vault_ca
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+secrets:
+  vault_role_id:
+    file: ${VAULT_ROLE_ID_FILE:?Set path to the application AppRole role ID file}
+  vault_secret_id:
+    file: ${VAULT_SECRET_ID_FILE:?Set path to the application AppRole secret ID file}
+  vault_ca:
+    file: ${VAULT_CA_FILE:?Set path to the trusted Vault CA certificate}

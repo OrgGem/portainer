@@ -55,7 +55,14 @@ func (handler *Handler) endpointInspect(w http.ResponseWriter, r *http.Request) 
 
 	excludeSnapshot, _ := request.RetrieveBooleanQueryParameter(r, "excludeSnapshot", true)
 
-	if !excludeSnapshot {
+	snapshotVisible, err := handler.roleSnapshotVisible(r, endpoint)
+	if err != nil {
+		return httperror.InternalServerError("Unable to read role policy", err)
+	}
+	if !snapshotVisible {
+		endpoint.Snapshots = nil
+	}
+	if !excludeSnapshot && snapshotVisible {
 		if err := handler.SnapshotService.FillSnapshotData(endpoint, false); err != nil {
 			return httperror.InternalServerError("Unable to add snapshot data", err)
 		}

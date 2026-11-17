@@ -1,6 +1,7 @@
 import { EnvironmentId } from '@/react/portainer/environments/types';
 import { EnvironmentGroup } from '@/react/portainer/environments/environment-groups/types';
 
+import { RolePolicy } from '../RoleManagement';
 import { RbacRole } from '../types';
 import { Team, TeamId } from '../../teams/types';
 
@@ -18,6 +19,11 @@ export type AccessLocation =
   (typeof AccessLocation)[keyof typeof AccessLocation];
 
 export interface AccessViewerPolicyModel {
+  standaloneRole?: string;
+  policy?: RolePolicy;
+  features?: { ID: string; Name: string }[];
+  resourceScope?: string;
+  restrictions?: string[];
   endpointId: EnvironmentId;
   endpointName: string;
   roleId: RbacRole['Id'];

@@ -18,6 +18,7 @@ import (
 	"github.com/portainer/portainer/api/http/middlewares"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/uac"
+	"github.com/portainer/portainer/pkg/authorization"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/response"
 )
@@ -70,12 +71,16 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) *httperror.H
 			return err
 		}
 
+		access, err := authorization.StandaloneAccessForUser(tx, user.ID, endpoint)
+		if err != nil {
+			return err
+		}
 		containers, err := cli.ContainerList(r.Context(), container.ListOptions{All: true})
 		if err != nil {
 			return httperror.InternalServerError("Unable to retrieve Docker containers", err)
 		}
 
-		if containers, err = uac.FilterByResourceControl(containers, user, context.UserMemberships, uac.ContainerResourceControlGetter(tx, endpoint.ID)); err != nil {
+		if containers, err = uac.FilterByResourceControl(containers, user, context.UserMemberships, uac.ContainerResourceControlGetter(tx, endpoint.ID), access); err != nil {
 			return err
 		}
 
@@ -103,7 +108,7 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) *httperror.H
 				return httperror.InternalServerError("Unable to retrieve Docker services", err)
 			}
 
-			if services, err = uac.FilterByResourceControl(servicesRes, user, context.UserMemberships, uac.ServiceResourceControlGetter(tx, endpoint.ID)); err != nil {
+			if services, err = uac.FilterByResourceControl(servicesRes, user, context.UserMemberships, uac.ServiceResourceControlGetter(tx, endpoint.ID), access); err != nil {
 				return err
 			}
 		}
@@ -123,7 +128,7 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) *httperror.H
 				return nil, errors.New("Found nil volume in volumes list")
 			}
 			return uac.VolumeResourceControlGetter(tx, endpoint.ID, dockerID)(*item)
-		}); err != nil {
+		}, access); err != nil {
 			return err
 		}
 
@@ -132,7 +137,7 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) *httperror.H
 			return httperror.InternalServerError("Unable to retrieve Docker networks", err)
 		}
 
-		if networks, err = uac.FilterByResourceControl(networks, user, context.UserMemberships, uac.NetworkResourceControlGetter(tx, endpoint.ID)); err != nil {
+		if networks, err = uac.FilterByResourceControl(networks, user, context.UserMemberships, uac.NetworkResourceControlGetter(tx, endpoint.ID), access); err != nil {
 			return err
 		}
 
@@ -142,7 +147,7 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) *httperror.H
 		}
 
 		stackCount := 0
-		if environment.SecuritySettings.AllowStackManagementForRegularUsers || context.IsAdmin {
+		if environment.SecuritySettings.AllowStackManagementForRegularUsers || context.IsAdmin || access.EnvironmentAdmin() {
 			stacks, err := utils.GetDockerStacks(tx, context, environment.ID, containers, services)
 			if err != nil {
 				return httperror.InternalServerError("Unable to retrieve stacks", err)

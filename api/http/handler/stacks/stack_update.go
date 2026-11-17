@@ -16,7 +16,6 @@ import (
 	"github.com/portainer/portainer/api/stacks/stackutils"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
-	"github.com/portainer/portainer/pkg/libhttp/response"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -127,11 +126,11 @@ func (handler *Handler) stackUpdate(w http.ResponseWriter, r *http.Request) *htt
 
 		return nil
 	}); err != nil {
-		return response.TxResponse(w, stack, err)
+		return handler.writeRoleStackResponse(w, r, stack, err)
 	}
 
 	if deploymentConfig == nil {
-		return response.JSON(w, stack)
+		return handler.writeRoleStackResponse(w, r, stack, nil)
 	}
 
 	if stack.Type == portainer.KubernetesStack {
@@ -142,7 +141,7 @@ func (handler *Handler) stackUpdate(w http.ResponseWriter, r *http.Request) *htt
 		if err := handler.SourceScheduler.Reconcile(reconcileSourceID); err != nil {
 			log.Warn().Err(err).Msg("source scheduler reconcile failed after stack update")
 		}
-		return response.JSON(w, stack)
+		return handler.writeRoleStackResponse(w, r, stack, nil)
 	}
 
 	if err := handler.SourceScheduler.Reconcile(reconcileSourceID); err != nil {
@@ -151,7 +150,7 @@ func (handler *Handler) stackUpdate(w http.ResponseWriter, r *http.Request) *htt
 
 	go stackDeploy(handler.DataStore, stack.ID, deploymentConfig, postDeploy)
 
-	return response.JSON(w, stack)
+	return handler.writeRoleStackResponse(w, r, stack, nil)
 }
 
 func (handler *Handler) updateStackInTx(tx dataservices.DataStoreTx, r *http.Request, stackID portainer.StackID, endpointID portainer.EndpointID) (*portainer.Stack, deployments.StackDeploymentConfiger, postDeployFunc, *httperror.HandlerError) {
@@ -456,6 +455,13 @@ func stackDeploy(dataStore dataservices.DataStore, stackID portainer.StackID, st
 
 	deployErr := stackDeploymentConfig.Deploy(ctx)
 
+	// Finish file rollback/cleanup before exposing a terminal status. Managed
+	// stack mutations (including target retirement) remain blocked while the
+	// candidate Compose file is still on disk.
+	if postDeploy != nil {
+		postDeploy(ctx, deployErr)
+	}
+
 	if err := dataStore.UpdateTx(func(tx dataservices.DataStoreTx) error {
 		stack, err := tx.Stack().Read(stackID)
 		if err != nil {
@@ -471,10 +477,6 @@ func stackDeploy(dataStore dataservices.DataStore, stackID portainer.StackID, st
 			Str("context", "stackDeploy").
 			Msg("Failed to update stack status after async deployment")
 		return
-	}
-
-	if postDeploy != nil {
-		postDeploy(ctx, deployErr)
 	}
 }
 

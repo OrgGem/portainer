@@ -17,6 +17,7 @@ export type FilesTableMeta = TableMeta<FileData> & {
   onBrowse: (name: string) => void;
   onDownload: (fileName: string) => void;
   onDelete: (fileName: string) => void;
+  onEditText?: (file: FileData) => void;
 };
 
 export function isFilesTableMeta(

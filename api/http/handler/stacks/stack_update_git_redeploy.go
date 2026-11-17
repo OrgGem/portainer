@@ -272,7 +272,7 @@ func (handler *Handler) stackGitRedeploy(w http.ResponseWriter, r *http.Request)
 			return err
 		}
 
-		return response.JSON(w, stack)
+		return handler.writeRoleStackResponse(w, r, stack, nil)
 	}
 
 	// Async deployment workflow for Swarm and Compose stacks
@@ -298,7 +298,7 @@ func (handler *Handler) stackGitRedeploy(w http.ResponseWriter, r *http.Request)
 		go stackDeploy(handler.DataStore, stack.ID, deploymentConfig, postDeploy)
 	}
 
-	return response.JSON(w, stack)
+	return handler.writeRoleStackResponse(w, r, stack, nil)
 }
 
 // deployStack builds the deployment config without deploying; the caller deploys it (sync for

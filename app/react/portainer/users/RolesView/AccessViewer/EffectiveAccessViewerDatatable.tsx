@@ -29,8 +29,10 @@ export function EffectiveAccessViewerDatatable({
       title="Access"
       description={
         <TextTip color="blue">
-          Effective role for each environment will be displayed for the selected
-          user.
+          Role features are an upper bound, not a guarantee for every resource.
+          Precedence: direct user/environment, user/group, team/environment,
+          team/group. Resource ownership, stack action policies and environment
+          security settings may further restrict operations.
         </TextTip>
       }
       disableSelect

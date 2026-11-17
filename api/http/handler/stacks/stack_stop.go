@@ -13,7 +13,6 @@ import (
 	"github.com/portainer/portainer/api/stacks/stackutils"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
-	"github.com/portainer/portainer/pkg/libhttp/response"
 	"github.com/rs/zerolog/log"
 )
 
@@ -129,7 +128,7 @@ func (handler *Handler) stackStop(w http.ResponseWriter, r *http.Request) *httpe
 		return nil
 	})
 
-	return response.TxResponse(w, stack, err)
+	return handler.writeRoleStackResponse(w, r, stack, err)
 }
 
 func (handler *Handler) stopStack(ctx context.Context, userId portainer.UserID, stack *portainer.Stack, endpoint *portainer.Endpoint) error {
