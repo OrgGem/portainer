@@ -5,6 +5,7 @@ version remains 2.45.3 for compatibility. Git tags use `v2.45.3-custom.N`, where
 `N` increases for each release. Do not move an already published tag.
 
 Pushing a matching tag starts [Release custom containers](../../.github/workflows/container-release.yml).
+Branch pushes also run the validation jobs; publishing is restricted to tags.
 It checks that the tag matches VERSION, runs the focused backend regression and
 frontend component suites plus TypeScript checking, then builds and publishes:
 
