@@ -10,8 +10,6 @@ import (
 	httperrors "github.com/portainer/portainer/api/http/errors"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
-
-	"github.com/rs/zerolog/log"
 )
 
 type oauthPayload struct {
@@ -78,9 +76,10 @@ func (handler *Handler) validateOAuth(w http.ResponseWriter, r *http.Request) *h
 
 	username, err := handler.authenticateOAuth(r.Context(), payload.Code, &settings.OAuthSettings)
 	if err != nil {
-		log.Debug().Err(err).Msg("OAuth authentication error")
-
 		return httperror.InternalServerError("Unable to authenticate through OAuth", httperrors.ErrUnauthorized)
+	}
+	if info := logRequest(r); info != nil {
+		info.username = safeUsername(username)
 	}
 
 	user, err := handler.DataStore.User().UserByUsername(username)
@@ -118,5 +117,6 @@ func (handler *Handler) validateOAuth(w http.ResponseWriter, r *http.Request) *h
 
 	}
 
+	setLogUser(r, user)
 	return handler.writeToken(w, r, user, false, settings.ForceSecureCookies)
 }

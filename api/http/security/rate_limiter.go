@@ -33,12 +33,29 @@ func NewRateLimiter(maxRequests int, duration time.Duration, banDuration time.Du
 
 // LimitAccess wraps current request with check if remote address does not goes above the defined limits
 func (limiter *RateLimiter) LimitAccess(next http.Handler) http.Handler {
+	return limiter.LimitAccessWithRejection(next, nil)
+}
+
+// LimitAccessWithRejection reports an actual limiter rejection to the caller.
+// The callback runs before the response is written and must not block.
+func (limiter *RateLimiter) LimitAccessWithRejection(next http.Handler, onRejected func(*http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := libhttp.ClientIP(r, limiter.trustedProxies)
+		ip := limiter.ClientIP(r)
 		if banned := limiter.Inc(ip); banned {
+			if onRejected != nil {
+				onRejected(r)
+			}
 			httperror.WriteError(w, http.StatusForbidden, "Access denied", errors.ErrResourceAccessDenied)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ClientIP resolves the request using the same trusted proxies as the limiter.
+func (limiter *RateLimiter) ClientIP(r *http.Request) string {
+	if limiter == nil {
+		return libhttp.ClientIP(r, nil)
+	}
+	return libhttp.ClientIP(r, limiter.trustedProxies)
 }

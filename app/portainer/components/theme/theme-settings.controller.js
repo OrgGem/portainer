@@ -2,6 +2,7 @@ import { notifyError, notifySuccess } from '@/portainer/services/notifications';
 import { userQueryKeys } from '@/portainer/users/queries/queryKeys';
 import { queryClient } from '@/react-tools/react-query';
 import { options } from '@/react/portainer/account/AccountView/theme-options';
+import { getDefaultTheme } from '@/react/portainer/appearance/appearance';
 
 export default class ThemeSettingsController {
   /* @ngInject */
@@ -43,7 +44,7 @@ export default class ThemeSettingsController {
     return this.$async(async () => {
       this.state = {
         userId: null,
-        themeColor: 'auto',
+        themeColor: getDefaultTheme(),
       };
 
       this.state.availableThemes = options;

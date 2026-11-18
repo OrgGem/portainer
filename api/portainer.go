@@ -1183,6 +1183,8 @@ type (
 	// Settings represents the application settings
 	Settings struct {
 		ComposeBuildPolicy *ComposeBuildPolicy `json:"ComposeBuildPolicy,omitempty"`
+		// Appearance controls instance-wide branding and presentation.
+		Appearance *AppearanceSettings `json:"Appearance,omitempty"`
 		// URL to a logo that will be displayed on the login page as well as on top of the sidebar. Will use default Portainer logo when value is empty string
 		LogoURL string `json:"LogoURL" example:"https://mycompany.mydomain.tld/logo.png"`
 		// A list of label name & value that will be used to hide containers when querying containers

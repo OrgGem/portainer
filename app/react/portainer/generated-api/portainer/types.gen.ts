@@ -2105,6 +2105,42 @@ export type PortainerAccessPolicy = {
   RoleId: number;
 };
 
+export type PortainerAppearanceBranding = {
+  FaviconURL?: string;
+  Name?: string;
+};
+
+export type PortainerAppearanceColors = {
+  Dark?: PortainerAppearancePalette;
+  Light?: PortainerAppearancePalette;
+};
+
+export type PortainerAppearanceLayout = {
+  Density?: 'standard' | 'compact';
+  SidebarDefault?: 'open' | 'closed';
+  SidebarWidth?: number;
+};
+
+export type PortainerAppearancePalette = {
+  Accent?: string;
+  PageBackground?: string;
+  SidebarBackground?: string;
+  SurfaceBackground?: string;
+};
+
+export type PortainerAppearanceSettings = {
+  Branding?: PortainerAppearanceBranding;
+  Colors?: PortainerAppearanceColors;
+  DefaultTheme?: 'auto' | 'light' | 'dark' | 'highcontrast';
+  Layout?: PortainerAppearanceLayout;
+  Typography?: PortainerAppearanceTypography;
+};
+
+export type PortainerAppearanceTypography = {
+  FontFamily?: 'inter' | 'system' | 'arial';
+  FontScale?: 100 | 110 | 120;
+};
+
 export type PortainerArtifact = {
   edgeGroups?: Array<number>;
   edgeStackId?: number;
@@ -3325,6 +3361,10 @@ export type PortainerSslSettings = {
 };
 
 export type PortainerSettings = {
+  /**
+   * Appearance controls instance-wide branding and presentation.
+   */
+  Appearance?: PortainerAppearanceSettings;
   /**
    * Container environment parameter AGENT_SECRET
    */
@@ -4597,6 +4637,10 @@ export type RoarRoarPortainerEndpointId = {
 
 export type SettingsPublicSettingsResponse = {
   /**
+   * Appearance contains only presentation settings needed before login.
+   */
+  Appearance?: PortainerAppearanceSettings;
+  /**
    * Active authentication method for the Portainer instance. Valid values are: 1 for internal, 2 for LDAP, or 3 for oauth
    */
   AuthenticationMethod?: PortainerAuthenticationMethod;
@@ -4664,6 +4708,10 @@ export type SettingsPublicSettingsResponse = {
 };
 
 export type SettingsSettingsUpdatePayload = {
+  /**
+   * Appearance is replaced as a complete object when supplied.
+   */
+  Appearance?: PortainerAppearanceSettings;
   /**
    * Active authentication method for the Portainer instance. Valid values are: 1 for internal, 2 for LDAP, or 3 for oauth
    */

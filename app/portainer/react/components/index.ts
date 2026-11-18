@@ -37,7 +37,6 @@ import { environmentsModule } from './environments';
 import { registriesModule } from './registries';
 import { accountModule } from './account';
 import { usersModule } from './users';
-import { activityLogsModule } from './activity-logs';
 import { rbacModule } from './rbac';
 import { stacksModule } from './stacks';
 import { authModule } from './auth';
@@ -53,7 +52,6 @@ export const ngModule = angular
     settingsModule,
     accountModule,
     usersModule,
-    activityLogsModule,
     rbacModule,
     stacksModule,
   ])

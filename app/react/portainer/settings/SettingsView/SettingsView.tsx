@@ -8,6 +8,7 @@ import { PageHeader } from '@@/PageHeader';
 import { useSettings } from '../queries';
 import { Settings } from '../types';
 import { isBE } from '../../feature-flags/feature-flags.service';
+import { AppearancePanel } from '../../appearance/AppearancePanel';
 
 import { ApplicationSettingsPanel } from './ApplicationSettingsPanel';
 import { BackupSettingsPanel } from './BackupSettingsView';
@@ -38,6 +39,10 @@ export function SettingsView() {
       <div className="mx-4 space-y-4">
         {settingsQuery.data && (
           <>
+            <AppearancePanel
+              settings={settingsQuery.data}
+              isRefreshing={settingsQuery.isFetching}
+            />
             <ApplicationSettingsPanel
               onSuccess={handleSuccess}
               settings={settingsQuery.data}

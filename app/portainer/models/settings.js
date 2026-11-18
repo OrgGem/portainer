@@ -20,6 +20,7 @@ export function SettingsViewModel(data) {
 }
 
 export function PublicSettingsViewModel(settings) {
+  this.Appearance = settings.Appearance;
   this.AuthenticationMethod = settings.AuthenticationMethod;
   this.TeamSync = settings.TeamSync;
   this.RequiredPasswordLength = settings.RequiredPasswordLength;

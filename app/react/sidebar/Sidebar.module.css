@@ -15,7 +15,7 @@
 }
 
 :global(#page-wrapper) {
-  --sidebar-width: 300px;
+  --sidebar-width: var(--appearance-sidebar-width, 300px);
   /* 32px for collapsed items + 20px padding on each side */
   --sidebar-closed-width: 72px;
 }

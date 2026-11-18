@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/authlog"
 	"github.com/portainer/portainer/api/dataservices"
 	httperrors "github.com/portainer/portainer/api/http/errors"
 	"github.com/portainer/portainer/api/http/middlewares"
@@ -58,7 +59,11 @@ func (payload *authenticatePayload) Validate(r *http.Request) error {
 // @router /auth [post]
 func (handler *Handler) authenticate(rw http.ResponseWriter, r *http.Request) *httperror.HandlerError {
 	var payload authenticatePayload
-	if err := request.DecodeAndValidateJSONPayload(r, &payload); err != nil {
+	err := request.DecodeAndValidateJSONPayload(r, &payload)
+	if info := logRequest(r); info != nil {
+		info.username = safeUsername(payload.Username)
+	}
+	if err != nil {
 		return httperror.BadRequest("Invalid request payload", err)
 	}
 
@@ -88,6 +93,7 @@ func (handler *Handler) authenticate(rw http.ResponseWriter, r *http.Request) *h
 			}
 		}
 	}
+	setLogUser(r, user)
 
 	// Clear any existing user caches
 	if user != nil {
@@ -95,6 +101,9 @@ func (handler *Handler) authenticate(rw http.ResponseWriter, r *http.Request) *h
 	}
 
 	if user != nil && isUserInitialAdmin(user) || settings.AuthenticationMethod == portainer.AuthenticationInternal {
+		if info := logRequest(r); info != nil {
+			info.method = authlog.Internal
+		}
 		return handler.authenticateInternal(rw, r, user, payload.Password, settings.ForceSecureCookies)
 	}
 
@@ -103,6 +112,9 @@ func (handler *Handler) authenticate(rw http.ResponseWriter, r *http.Request) *h
 	}
 
 	if settings.AuthenticationMethod == portainer.AuthenticationLDAP {
+		if info := logRequest(r); info != nil {
+			info.method = authlog.LDAP
+		}
 		return handler.authenticateLDAP(rw, r, user, payload.Username, payload.Password, &settings.LDAPSettings, settings.ForceSecureCookies)
 	}
 
@@ -143,6 +155,7 @@ func (handler *Handler) authenticateLDAP(w http.ResponseWriter, r *http.Request,
 			return httperror.InternalServerError("Unable to persist user inside the database", err)
 		}
 	}
+	setLogUser(r, user)
 
 	if err := handler.syncUserTeamsWithLDAPGroups(user, ldapSettings); err != nil {
 		log.Warn().Err(err).Msg("unable to automatically sync user teams with ldap")

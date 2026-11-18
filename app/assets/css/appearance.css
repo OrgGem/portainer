@@ -1,0 +1,180 @@
+/* These overrides are opt-in so the stock themes remain unchanged. */
+html[data-appearance-page] body {
+  color: var(--appearance-page-text) !important;
+}
+html[data-appearance-page]:not([data-appearance-surface]) :is(.widget, .panel, .modal-content) {
+  color: var(--text-body-color);
+}
+html[data-appearance-surface] .widget,
+html[data-appearance-surface] .widget .widget-header,
+html[data-appearance-surface] .widget .widget-body,
+html[data-appearance-surface] .widget .widget-body table tbody td,
+html[data-appearance-surface] .widget .widget-body table thead th,
+html[data-appearance-surface] .panel,
+html[data-appearance-surface] .modal-content,
+html[data-appearance-surface] .form-control,
+html[data-appearance-surface] .appearance-page-header,
+html[data-appearance-surface] .datatable .footer {
+  color: var(--appearance-surface-text);
+}
+html[data-appearance-surface] .appearance-page-header :is(a, button, span, svg):not([role='menu'] *) {
+  color: var(--appearance-surface-text) !important;
+}
+html[data-appearance-surface] .panel,
+html[data-appearance-surface] .modal-content,
+html[data-appearance-surface] .form-control {
+  background-color: var(--bg-widget-color);
+}
+html[data-appearance-sidebar] .sidebar,
+html[data-appearance-sidebar] .sidebar li,
+html[data-appearance-sidebar] .sidebar a,
+html[data-appearance-sidebar] .sidebar button {
+  color: var(--appearance-sidebar-text) !important;
+}
+/* The collapsed sidebar's Tippy content is portalled outside the sidebar. */
+html[data-appearance-sidebar] .tippy-box.sidebar {
+  background-color: var(--bg-sidebar-color) !important;
+}
+html[data-appearance-sidebar] .sidebar .bg-graphite-500,
+html[data-appearance-sidebar] .sidebar [class*='hover:bg-graphite-500']:hover {
+  background-color: var(--appearance-sidebar-hover) !important;
+}
+/* React Select's selected value and editable input use their own theme colors. */
+html[data-appearance-surface] .portainer-selector-root .portainer-selector__single-value,
+html[data-appearance-surface] .portainer-selector-root .portainer-selector__input-container {
+  color: var(--appearance-surface-text);
+}
+html[data-appearance-accent] .btn.btn-primary:not(.sidebar) {
+  color: var(--appearance-accent-text) !important;
+  background-color: var(--appearance-accent) !important;
+  border-color: var(--appearance-accent) !important;
+}
+html[data-appearance-accent] .btn.btn-primary:not(.sidebar):hover {
+  background-color: var(--appearance-accent-hover) !important;
+  border-color: var(--appearance-accent-hover) !important;
+}
+html[data-appearance-accent] .btn.btn-primary:not(.sidebar):active {
+  background-color: var(--appearance-accent-active) !important;
+}
+html[data-appearance-accent] .btn.btn-secondary {
+  color: var(--appearance-accent-secondary) !important;
+  border-color: var(--appearance-accent-secondary) !important;
+}
+html[data-appearance-accent] a:not(.btn):not(.sidebar a) {
+  color: var(--appearance-accent-page);
+}
+html[data-appearance-accent] :is(.widget, .panel, .modal-content, .appearance-page-header) a:not(.btn):not(.sidebar a),
+html[data-appearance-accent] .nav-tabs > li.active > a {
+  color: var(--appearance-accent-surface);
+}
+html[data-appearance-accent] .nav-tabs > li.active > a {
+  border-bottom-color: var(--appearance-accent);
+}
+html[data-appearance-accent] :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--appearance-accent) !important;
+  outline-offset: 2px;
+}
+html[data-appearance-font-scale] body {
+  font-size: calc(14px * var(--appearance-font-scale));
+}
+html[data-appearance-font-scale] :is(.form-control, .btn, input, select, textarea) {
+  font-size: calc(14px * var(--appearance-font-scale));
+}
+html[data-appearance-font-scale] :is(.btn-sm, .btn-xs) {
+  font-size: calc(12px * var(--appearance-font-scale));
+}
+html[data-appearance-font-scale] .widget .widget-body table thead * {
+  font-size: calc(14px * var(--appearance-font-scale));
+}
+html[data-appearance-font-scale] .widget .widget-body table tbody * {
+  font-size: calc(13px * var(--appearance-font-scale));
+}
+html[data-appearance-compact] .widget .widget-body:not(.no-padding) {
+  padding: 16px;
+}
+html[data-appearance-compact] .widget .widget-body table tbody td,
+html[data-appearance-compact] .widget .widget-body table thead th {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+html[data-appearance-compact] .form-horizontal .form-group {
+  margin-bottom: 12px;
+}
+html[data-appearance-compact] .sidebar ul.space-y-5 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 1rem;
+}
+.appearance-settings fieldset {
+  border: 0;
+  padding: 0 0 1rem;
+  margin: 0;
+}
+.appearance-settings legend {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.appearance-settings fieldset > label {
+  display: block;
+  max-width: 34rem;
+  margin-bottom: 0.75rem;
+}
+.appearance-settings fieldset > label .form-control {
+  margin-top: 0.3rem;
+}
+.appearance-preview-viewport {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.appearance-preview {
+  display: flex;
+  border: 1px solid #777;
+  min-height: 200px;
+  margin: 1rem 0;
+  overflow: auto;
+}
+.appearance-preview aside {
+  flex-shrink: 0;
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.appearance-preview aside img {
+  max-width: 100%;
+  max-height: 42px;
+  display: block;
+}
+.appearance-preview-content {
+  flex: 1;
+  min-width: 220px;
+  padding: 0.75rem;
+}
+.appearance-preview-content article {
+  border-radius: 4px;
+}
+.appearance-preview-content h4 {
+  color: inherit;
+}
+.appearance-preview-content table {
+  width: 100%;
+  margin: 0.5rem 0;
+}
+.appearance-preview-content input {
+  max-width: 100%;
+  color: #222;
+  background: #fff;
+}
+.appearance-brand-name {
+  display: block;
+  flex-basis: 100%;
+  color: var(--appearance-sidebar-text, white);
+  font-size: 1.1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  padding-top: 0.5rem;
+}
+.appearance-login-brand {
+  font-size: 1.35rem;
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+  padding-top: 0.75rem;
+}

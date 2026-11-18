@@ -3,6 +3,7 @@ import { Environment } from '@/react/portainer/environments/types';
 export interface StateManager {
   updateEndpointState(endpoint: Environment): Promise<void>;
   updateLogo(logo: string): void;
+  updateAppearance(appearance: import('@/react/portainer/appearance/appearance').Appearance, logo: string): void;
   updateSnapshotInterval(interval: string): void;
 }
 

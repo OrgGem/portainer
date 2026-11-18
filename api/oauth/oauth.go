@@ -36,19 +36,20 @@ func (Service) Authenticate(ctx context.Context, code string, configuration *por
 
 	token, err := GetOAuthToken(ctx, code, configuration)
 	if err != nil {
-		log.Error().Err(err).Msg("failed retrieving oauth token")
+		// Provider responses and request errors may contain codes or credentials.
+		log.Error().Msg("failed retrieving oauth token")
 
 		return "", err
 	}
 
 	idToken, err := GetIdToken(token)
 	if err != nil {
-		log.Error().Err(err).Msg("failed parsing id_token")
+		log.Error().Msg("failed parsing id_token")
 	}
 
 	resource, err := GetResource(ctx, token.AccessToken, configuration.ResourceURI)
 	if err != nil {
-		log.Error().Err(err).Msg("failed retrieving resource")
+		log.Error().Msg("failed retrieving resource")
 
 		return "", err
 	}
@@ -57,7 +58,7 @@ func (Service) Authenticate(ctx context.Context, code string, configuration *por
 
 	username, err := GetUsername(resource, configuration.UserIdentifier)
 	if err != nil {
-		log.Error().Err(err).Msg("failed retrieving username")
+		log.Error().Msg("failed retrieving username")
 
 		return "", err
 	}
@@ -138,12 +139,7 @@ func GetResource(ctx context.Context, token string, resourceURI string) (map[str
 	originalContentType := resp.Header.Get("Content-Type")
 	content, _, err := mime.ParseMediaType(originalContentType)
 	if err != nil {
-		log.Debug().
-			Err(err).
-			Str("context", "OAuthResourceFetch").
-			Str("original_content_type", originalContentType).
-			Str("parsed_content_type", content).
-			Msg("Failed to parse Content-Type header from resource endpoint, falling back to JSON")
+		log.Debug().Msg("Failed to parse Content-Type header from resource endpoint, falling back to JSON")
 	}
 
 	if content == "application/x-www-form-urlencoded" || content == "text/plain" {

@@ -22,7 +22,7 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', ...defaultTheme.fontFamily.sans],
+        sans: ['var(--appearance-font-family, Inter)', ...defaultTheme.fontFamily.sans],
       },
       fontSize: {
         // html is pinned to 16px, so this is exactly 10px.

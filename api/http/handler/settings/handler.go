@@ -14,6 +14,8 @@ import (
 func hideFields(settings *portainer.Settings) {
 	policy := settings.EffectiveComposeBuildPolicy()
 	settings.ComposeBuildPolicy = &policy
+	appearance := settings.EffectiveAppearance()
+	settings.Appearance = &appearance
 	settings.LDAPSettings.Password = ""
 	settings.OAuthSettings.ClientSecret = ""
 	settings.OAuthSettings.KubeSecretKey = nil

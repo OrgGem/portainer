@@ -11,6 +11,8 @@ import (
 )
 
 type publicSettingsResponse struct {
+	// Appearance contains only presentation settings needed before login.
+	Appearance portainer.AppearanceSettings `json:"Appearance"`
 	// URL to a logo that will be displayed on the login page as well as on top of the sidebar. Will use default Portainer logo when value is empty string
 	LogoURL string `json:"LogoURL" example:"https://mycompany.mydomain.tld/logo.png"`
 	// Active authentication method for the Portainer instance. Valid values are: 1 for internal, 2 for LDAP, or 3 for oauth
@@ -71,6 +73,7 @@ func (handler *Handler) settingsPublic(w http.ResponseWriter, r *http.Request) *
 
 func generatePublicSettings(appSettings *portainer.Settings) *publicSettingsResponse {
 	publicSettings := &publicSettingsResponse{
+		Appearance:                appSettings.EffectiveAppearance(),
 		LogoURL:                   appSettings.LogoURL,
 		AuthenticationMethod:      appSettings.AuthenticationMethod,
 		RequiredPasswordLength:    appSettings.InternalAuthSettings.RequiredPasswordLength,

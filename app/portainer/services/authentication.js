@@ -100,6 +100,7 @@ angular.module('portainer.app').factory('Authentication', [
 
     function cleanUserData() {
       user = {};
+      ThemeManager.defaultTheme();
     }
 
     async function loadUserData() {
@@ -113,12 +114,8 @@ angular.module('portainer.app').factory('Authentication', [
       user.portainerAuthorizations = userData.PortainerAuthorizations;
 
       // Initialize user theme base on UserTheme from database
-      const userTheme = userData.ThemeSettings ? userData.ThemeSettings.color : 'auto';
-      if (userTheme === 'auto' || !userTheme) {
-        ThemeManager.autoTheme();
-      } else {
-        ThemeManager.setTheme(userTheme);
-      }
+      const userTheme = userData.ThemeSettings && userData.ThemeSettings.color;
+      ThemeManager.setTheme(userTheme || undefined);
 
       LocalStorage.storeUserId(userData.Id);
     }

@@ -23,6 +23,8 @@ import (
 
 type settingsUpdatePayload struct {
 	ComposeBuildPolicy *portainer.ComposeBuildPolicy
+	// Appearance is replaced as a complete object when supplied.
+	Appearance *portainer.AppearanceSettings
 	// URL to a logo that will be displayed on the login page as well as on top of the sidebar. Will use default Portainer logo when value is empty string
 	LogoURL *string `example:"https://mycompany.mydomain.tld/logo.png"`
 	// A list of label name & value that will be used to hide containers when querying containers
@@ -60,6 +62,11 @@ type settingsUpdatePayload struct {
 }
 
 func (payload *settingsUpdatePayload) Validate(r *http.Request) error {
+	if payload.Appearance != nil {
+		if err := payload.Appearance.Validate(); err != nil {
+			return err
+		}
+	}
 	if payload.ComposeBuildPolicy != nil {
 		if err := payload.ComposeBuildPolicy.Validate(); err != nil {
 			return err
@@ -155,6 +162,9 @@ func (handler *Handler) updateSettings(tx dataservices.DataStoreTx, payload sett
 	}
 	if payload.ComposeBuildPolicy != nil {
 		settings.ComposeBuildPolicy = payload.ComposeBuildPolicy
+	}
+	if payload.Appearance != nil {
+		settings.Appearance = payload.Appearance
 	}
 
 	if payload.AuthenticationMethod != nil {

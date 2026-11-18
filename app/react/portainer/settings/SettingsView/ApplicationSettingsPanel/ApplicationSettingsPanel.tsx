@@ -14,7 +14,6 @@ import { type Settings } from '../../types';
 
 import { validation } from './validation';
 import { Values } from './types';
-import { LogoFieldset } from './LogoFieldset';
 import { ScreenBannerFieldset } from './ScreenBannerFieldset';
 import { TemplatesUrlSection } from './TemplatesUrlSection';
 
@@ -31,8 +30,6 @@ export function ApplicationSettingsPanel({
     edgeAgentCheckinInterval: settings.EdgeAgentCheckinInterval,
     loginBannerEnabled: !!settings.CustomLoginBanner,
     loginBanner: settings.CustomLoginBanner,
-    logoEnabled: !!settings.LogoURL,
-    logo: settings.LogoURL,
     snapshotInterval: settings.SnapshotInterval,
     templatesUrl: settings.TemplatesURL,
   };
@@ -57,7 +54,6 @@ export function ApplicationSettingsPanel({
     mutation.mutate(
       {
         SnapshotInterval: values.snapshotInterval,
-        LogoURL: values.logo,
         CustomLoginBanner: values.loginBanner,
         TemplatesURL: values.templatesUrl,
         EdgeAgentCheckinInterval: values.edgeAgentCheckinInterval,
@@ -97,8 +93,6 @@ function InnerForm({ isLoading }: { isLoading: boolean }) {
         isDefaultHidden
         onChange={(value) => setFieldValue('edgeAgentCheckinInterval', value)}
       />
-
-      <LogoFieldset />
 
       <ScreenBannerFieldset />
 

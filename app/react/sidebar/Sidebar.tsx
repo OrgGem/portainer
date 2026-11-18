@@ -52,7 +52,7 @@ function InnerSidebar() {
         )}
         aria-label="Main"
       >
-        <Header logo={LogoURL} />
+        <Header logo={LogoURL} brandName={settingsQuery.data.Appearance?.Branding.Name} />
         {/* negative margin + padding -> scrollbar won't hide the content */}
         <div
           className={clsx(

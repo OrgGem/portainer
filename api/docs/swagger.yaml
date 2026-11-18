@@ -3111,6 +3111,87 @@ definitions:
     required:
     - RoleId
     type: object
+  portainer.AppearanceBranding:
+    properties:
+      FaviconURL:
+        example: /favicon.png
+        type: string
+      Name:
+        example: Portainer
+        type: string
+    type: object
+  portainer.AppearanceColors:
+    properties:
+      Dark:
+        $ref: '#/definitions/portainer.AppearancePalette'
+      Light:
+        $ref: '#/definitions/portainer.AppearancePalette'
+    type: object
+  portainer.AppearanceLayout:
+    properties:
+      Density:
+        enum:
+        - standard
+        - compact
+        type: string
+      SidebarDefault:
+        enum:
+        - open
+        - closed
+        type: string
+      SidebarWidth:
+        maximum: 360
+        minimum: 240
+        type: integer
+    type: object
+  portainer.AppearancePalette:
+    properties:
+      Accent:
+        example: '#326CE5'
+        type: string
+      PageBackground:
+        example: '#F5F5F5'
+        type: string
+      SidebarBackground:
+        example: '#2E2F33'
+        type: string
+      SurfaceBackground:
+        example: '#FFFFFF'
+        type: string
+    type: object
+  portainer.AppearanceSettings:
+    properties:
+      Branding:
+        $ref: '#/definitions/portainer.AppearanceBranding'
+      Colors:
+        $ref: '#/definitions/portainer.AppearanceColors'
+      DefaultTheme:
+        enum:
+        - auto
+        - light
+        - dark
+        - highcontrast
+        type: string
+      Layout:
+        $ref: '#/definitions/portainer.AppearanceLayout'
+      Typography:
+        $ref: '#/definitions/portainer.AppearanceTypography'
+    type: object
+  portainer.AppearanceTypography:
+    properties:
+      FontFamily:
+        enum:
+        - inter
+        - system
+        - arial
+        type: string
+      FontScale:
+        enum:
+        - 100
+        - 110
+        - 120
+        type: integer
+    type: object
   portainer.Artifact:
     properties:
       edgeGroups:
@@ -4591,6 +4672,10 @@ definitions:
     type: object
   portainer.Settings:
     properties:
+      Appearance:
+        allOf:
+        - $ref: '#/definitions/portainer.AppearanceSettings'
+        description: Appearance controls instance-wide branding and presentation.
       AgentSecret:
         description: Container environment parameter AGENT_SECRET
         type: string
@@ -5988,6 +6073,11 @@ definitions:
     type: object
   settings.publicSettingsResponse:
     properties:
+      Appearance:
+        allOf:
+        - $ref: '#/definitions/portainer.AppearanceSettings'
+        description: Appearance contains only presentation settings needed before
+          login.
       AuthenticationMethod:
         allOf:
         - $ref: '#/definitions/portainer.AuthenticationMethod'
@@ -6069,6 +6159,10 @@ definitions:
     type: object
   settings.settingsUpdatePayload:
     properties:
+      Appearance:
+        allOf:
+        - $ref: '#/definitions/portainer.AppearanceSettings'
+        description: Appearance is replaced as a complete object when supplied.
       AuthenticationMethod:
         description: 'Active authentication method for the Portainer instance. Valid
           values are: 1 for internal, 2 for LDAP, or 3 for oauth'

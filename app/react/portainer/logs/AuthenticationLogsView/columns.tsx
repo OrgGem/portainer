@@ -3,13 +3,11 @@ import { Check, X } from 'lucide-react';
 
 import { isoDateFromTimestamp } from '@/portainer/filters/filters';
 
-import { multiple } from '@@/datatables/filter-types';
-import { filterHOC } from '@@/datatables/Filter';
 import { Icon } from '@@/Icon';
 
 import { ActivityType, AuthLog, AuthMethodType } from './types';
 
-const activityTypesProps = {
+const activityTypes = {
   [ActivityType.AuthSuccess]: {
     label: 'Authentication success',
     icon: Check,
@@ -28,47 +26,49 @@ const columnHelper = createColumnHelper<AuthLog>();
 export const columns = [
   columnHelper.accessor('timestamp', {
     header: 'Time',
-    cell: ({ getValue }) => {
-      const value = getValue();
-      return value ? isoDateFromTimestamp(value) : '';
-    },
+    cell: ({ getValue }) =>
+      getValue() ? isoDateFromTimestamp(getValue()) : 'Unknown',
   }),
   columnHelper.accessor('origin', {
     header: 'Origin',
+    cell: ({ getValue }) => getValue() || 'Unknown',
   }),
-  columnHelper.accessor(({ context }) => AuthMethodType[context] || '', {
-    header: 'Context',
-    enableColumnFilter: true,
-    filterFn: multiple,
-    meta: {
-      filter: filterHOC('Filter'),
-    },
+  columnHelper.accessor('context', {
+    header: 'Authentication method',
+    cell: ({ getValue }) => AuthMethodType[getValue()] || 'Unknown',
   }),
   columnHelper.accessor('username', {
     header: 'User',
+    cell: ({ getValue }) => getValue() || 'Unknown',
   }),
-
-  columnHelper.accessor((item) => activityTypesProps[item.type].label, {
+  columnHelper.accessor('type', {
     header: 'Result',
-    enableColumnFilter: true,
-    filterFn: multiple,
-    meta: {
-      filter: filterHOC('Filter'),
-    },
-    cell({ row: { original: item } }) {
-      const props = activityTypesProps[item.type];
+    cell: ({ getValue, row }) => {
+      const props = activityTypes[getValue()];
       if (!props) {
-        return null;
+        return 'Unknown';
       }
-
-      const { label, icon, mode } = props;
-
       return (
         <span className="flex items-center gap-1">
-          {label}
-          {icon && mode && <Icon icon={icon} mode={mode} />}
+          {props.label}
+          {row.original.rateLimited && (
+            <span>
+              {' '}
+              (rate-limited sample; {row.original.suppressedRateLimited ||
+                0}{' '}
+              suppressed since previous sample)
+            </span>
+          )}
+          {props.icon && props.mode && (
+            <Icon icon={props.icon} mode={props.mode} />
+          )}
         </span>
       );
     },
+  }),
+  columnHelper.accessor('statusCode', {
+    header: 'HTTP status',
+    enableSorting: false,
+    cell: ({ getValue }) => getValue() || 'Unknown',
   }),
 ];

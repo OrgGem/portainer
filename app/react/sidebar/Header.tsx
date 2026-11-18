@@ -12,9 +12,10 @@ import styles from './Header.module.css';
 
 interface Props {
   logo?: string;
+  brandName?: string;
 }
 
-export function Header({ logo: customLogo }: Props) {
+export function Header({ logo: customLogo, brandName }: Props) {
   const { isOpen } = useSidebarState();
 
   return (
@@ -30,6 +31,9 @@ export function Header({ logo: customLogo }: Props) {
       >
         <Logo customLogo={customLogo} isOpen={isOpen} />
       </Link>
+      {isOpen && brandName && brandName !== 'Portainer' && (
+        <span className="appearance-brand-name">{brandName}</span>
+      )}
       {isOpen && customLogo && (
         <div
           className={clsx(
@@ -89,6 +93,11 @@ function Logo({
         '!max-h-[27px]': !isOpen,
       })}
       alt="Logo"
+      onError={(event) => {
+        const fallback = getLogo(isOpen);
+        const image = event.currentTarget;
+        if (image.src !== new URL(fallback, document.baseURI).href) image.src = fallback;
+      }}
     />
   );
 }

@@ -10,7 +10,9 @@ import { FormControl } from '@@/form-components/FormControl';
 
 import 'react-datetime-picker/dist/DateTimePicker.css';
 
-type Value = { start: Date; end: Date | null };
+import { DateRange } from '../dateRange';
+
+type Value = DateRange;
 
 export function DateRangePicker({
   value,
@@ -25,7 +27,7 @@ export function DateRangePicker({
 }) {
   return (
     <FormControl label="Date range" errors={error}>
-      <div className="w-1/2">
+      <div className="w-full max-w-lg">
         <WojtekmajRangePicker
           format="y-MM-dd"
           className="form-control [&>div]:border-0"

@@ -1,4 +1,5 @@
 import { TeamId } from '@/react/portainer/users/teams/types';
+import { Appearance } from '@/react/portainer/appearance/appearance';
 
 export interface ComposeBuildPolicy {
   CPUPercent: number;
@@ -98,6 +99,7 @@ export interface DefaultRegistry {
 export interface ExperimentalFeatures {}
 
 export interface Settings {
+  Appearance?: Appearance;
   ComposeBuildPolicy?: ComposeBuildPolicy;
   LogoURL: string;
   CustomLoginBanner: string;
@@ -161,6 +163,7 @@ export interface GlobalDeploymentOptions {
 }
 
 export interface PublicSettingsResponse {
+  Appearance?: Appearance;
   /** URL to a logo that will be displayed on the login page as well as on top of the sidebar. Will use default Portainer logo when value is empty string  */
   LogoURL: string;
   /** The content in plaintext used to display in the login page. Will hide when value is empty string (only on BE) */

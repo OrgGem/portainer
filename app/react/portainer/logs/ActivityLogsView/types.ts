@@ -1,19 +1,21 @@
-interface BaseActivityLog {
+export type ActivitySource = 'configuration' | 'deployment' | 'metadata';
+export type ActivityStatus =
+  | 'success'
+  | 'failure'
+  | 'in_progress'
+  | 'inactive'
+  | 'unknown';
+
+export interface ActivityLog {
+  id: string;
   timestamp: number;
-  action: string;
-  context: string;
-  id: number;
   username: string;
-}
-export interface ActivityLogResponse extends BaseActivityLog {
-  payload: string;
-}
-
-export interface ActivityLog extends BaseActivityLog {
-  payload: string | object;
-}
-
-export interface ActivityLogsResponse {
-  logs: Array<ActivityLogResponse>;
-  totalCount: number;
+  context: string;
+  action: string;
+  status: ActivityStatus;
+  source: ActivitySource;
+  environmentId: number;
+  stackId: number;
+  stackName: string;
+  payload: Record<string, string | number | boolean | null>;
 }

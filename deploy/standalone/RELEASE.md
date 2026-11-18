@@ -11,8 +11,8 @@ frontend component suites plus TypeScript checking, then builds and publishes:
 
 | Component | Image for this release | Platform |
 | --- | --- | --- |
-| Portainer server | `ghcr.io/orggem/portainer:2.45.3-custom.1` | `linux/amd64` |
-| Companion Agent | `ghcr.io/orggem/portainer-agent:2.45.3-custom.1` | `linux/amd64` |
+| Portainer server | `ghcr.io/orggem/portainer:2.45.3-custom.2` | `linux/amd64` |
+| Companion Agent | `ghcr.io/orggem/portainer-agent:2.45.3-custom.2` | `linux/amd64` |
 
 The Agent build also runs its bidirectional proxy upgrade tests. The workflow
 does not run the optional Docker/Vault integration smoke scripts or deploy any
@@ -34,8 +34,8 @@ Actions are pinned by commit SHA and build caches are separate per component.
 3. Create an annotated tag matching VERSION, then push the branch and tag:
 
    ```sh
-   git tag -a v2.45.3-custom.2 -m "Portainer CE 2.45.3 custom release 2"
-   git push --atomic origin codex/standalone-stack-controls v2.45.3-custom.2
+   git tag -a v2.45.3-custom.3 -m "Portainer CE 2.45.3 custom release 3"
+   git push --atomic origin codex/standalone-stack-controls v2.45.3-custom.3
    ```
 
 4. Wait for all jobs in Actions to succeed. For transient failures, rerun the
@@ -47,6 +47,15 @@ published server image and use `docker compose ... pull` followed by
 volume, environment settings and configuration storage mounts. See [README](README.md)
 for Linux and Docker Desktop prerequisites. Agent environments must use the
 companion Agent image for the managed Compose builder's upgraded connection.
+
+## 2.45.3-custom.2
+
+- Appearance settings for branding, colors, typography, layout and default theme.
+- Authentication and user activity log views with filters and CSV export.
+- Release validation for the appearance and log backend and frontend tests.
+
+See [Appearance](../../docs/customization/appearance.md) and
+[Authentication and activity logs](LOGS.md) for usage and limits.
 
 ## 2.45.3-custom.1
 

@@ -841,6 +841,44 @@ export const zPortainerAccessPolicy = z.object({
   RoleId: z.int(),
 });
 
+export const zPortainerAppearanceBranding = z.object({
+  FaviconURL: z.string().optional(),
+  Name: z.string().optional(),
+});
+
+export const zPortainerAppearanceLayout = z.object({
+  Density: z.enum(['standard', 'compact']).optional(),
+  SidebarDefault: z.enum(['open', 'closed']).optional(),
+  SidebarWidth: z.int().gte(240).lte(360).optional(),
+});
+
+export const zPortainerAppearancePalette = z.object({
+  Accent: z.string().optional(),
+  PageBackground: z.string().optional(),
+  SidebarBackground: z.string().optional(),
+  SurfaceBackground: z.string().optional(),
+});
+
+export const zPortainerAppearanceColors = z.object({
+  Dark: zPortainerAppearancePalette.optional(),
+  Light: zPortainerAppearancePalette.optional(),
+});
+
+export const zPortainerAppearanceTypography = z.object({
+  FontFamily: z.enum(['inter', 'system', 'arial']).optional(),
+  FontScale: z
+    .union([z.literal(100), z.literal(110), z.literal(120)])
+    .optional(),
+});
+
+export const zPortainerAppearanceSettings = z.object({
+  Branding: zPortainerAppearanceBranding.optional(),
+  Colors: zPortainerAppearanceColors.optional(),
+  DefaultTheme: z.enum(['auto', 'light', 'dark', 'highcontrast']).optional(),
+  Layout: zPortainerAppearanceLayout.optional(),
+  Typography: zPortainerAppearanceTypography.optional(),
+});
+
 export const zPortainerAuthenticationMethod = z.union([
   z.literal(0),
   z.literal(1),
@@ -1497,6 +1535,7 @@ export const zPortainerRegistryManagementConfiguration = z.object({
 });
 
 export const zPortainerSettings = z.object({
+  Appearance: zPortainerAppearanceSettings.optional(),
   AgentSecret: z.string().optional(),
   AllowBindMountsForRegularUsers: z.boolean().optional(),
   AllowContainerCapabilitiesForRegularUsers: z.boolean().optional(),
@@ -2111,6 +2150,7 @@ export const zPortainerEdgeGroup = z.object({
 });
 
 export const zSettingsPublicSettingsResponse = z.object({
+  Appearance: zPortainerAppearanceSettings.optional(),
   AuthenticationMethod: zPortainerAuthenticationMethod.optional(),
   Edge: z
     .object({
@@ -2134,6 +2174,7 @@ export const zSettingsPublicSettingsResponse = z.object({
 });
 
 export const zSettingsSettingsUpdatePayload = z.object({
+  Appearance: zPortainerAppearanceSettings.optional(),
   AuthenticationMethod: z.int().optional(),
   BlackListedLabels: z.array(zPortainerPair).optional(),
   EdgeAgentCheckinInterval: z.int().optional(),

@@ -25,6 +25,11 @@ func (handler *Handler) logout(w http.ResponseWriter, r *http.Request) *httperro
 	tokenData, _ := handler.bouncer.CookieAuthLookup(r)
 
 	if tokenData != nil {
+		if info := logRequest(r); info != nil {
+			info.authenticated = true
+			info.username = safeUsername(tokenData.Username)
+			info.userID = int(tokenData.ID)
+		}
 		handler.KubernetesTokenCacheManager.RemoveUserFromCache(tokenData.ID)
 		handler.KubernetesClientFactory.ClearUserClientCache(strconv.Itoa(int(tokenData.ID)))
 		logoutcontext.Cancel(tokenData.Token)

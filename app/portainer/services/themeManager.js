@@ -19,6 +19,6 @@ export function ThemeManager() {
   }
 
   function defaultTheme() {
-    document.documentElement.removeAttribute('theme');
+    applyTheme();
   }
 }

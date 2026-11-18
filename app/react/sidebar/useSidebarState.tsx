@@ -10,7 +10,7 @@ import {
 import angular, { IScope } from 'angular';
 import _ from 'lodash';
 
-import { sidebarStore } from './sidebarStore';
+import { applyDefaultSidebarState, sidebarStore } from './sidebarStore';
 
 // using bootstrap breakpoint - https://getbootstrap.com/docs/5.0/layout/breakpoints/#min-width
 const mobileWidth = 992;
@@ -38,6 +38,12 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const prevIsOpen = useRef<boolean | null>(null);
 
   useUpdateAngularService(isOpen);
+
+  useEffect(() => {
+    applyDefaultSidebarState();
+    window.addEventListener('portainer:appearance-changed', applyDefaultSidebarState);
+    return () => window.removeEventListener('portainer:appearance-changed', applyDefaultSidebarState);
+  }, []);
 
   useEffect(() => {
     if (window.ddExtension) {

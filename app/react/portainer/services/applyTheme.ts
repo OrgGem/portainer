@@ -1,8 +1,12 @@
 import { ThemeColor } from '@/portainer/users/types';
+import { appearanceThemeChanged, getDefaultTheme, registerAppearanceThemeChange } from '@/react/portainer/appearance/appearance';
 
 let removeAutoThemeListener: (() => void) | null = null;
+let selectedTheme: ThemeColor | undefined;
 
-export function applyTheme(color: ThemeColor) {
+export function applyTheme(preference?: ThemeColor) {
+  selectedTheme = preference;
+  const color = preference || getDefaultTheme();
   removeAutoThemeListener?.();
   removeAutoThemeListener = null;
 
@@ -20,7 +24,10 @@ export function applyTheme(color: ThemeColor) {
   } else {
     document.documentElement.setAttribute('theme', color);
   }
+  appearanceThemeChanged();
 }
+
+registerAppearanceThemeChange(() => applyTheme(selectedTheme));
 
 function applyAutoTheme(mediaQuery: MediaQueryList) {
   if (mediaQuery.matches) {
@@ -28,4 +35,5 @@ function applyAutoTheme(mediaQuery: MediaQueryList) {
   } else {
     document.documentElement.removeAttribute('theme');
   }
+  appearanceThemeChanged();
 }

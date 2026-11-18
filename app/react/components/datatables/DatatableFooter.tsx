@@ -11,6 +11,7 @@ interface Props {
   onPageChange(page: number): void;
   pageCount: number;
   onPageSizeChange(pageSize: number): void;
+  showAllRowsOption?: boolean;
 }
 
 export function DatatableFooter({
@@ -21,12 +22,13 @@ export function DatatableFooter({
   onPageChange,
   pageCount,
   onPageSizeChange,
+  showAllRowsOption = true,
 }: Props) {
   return (
     <Table.Footer>
       <SelectedRowsCount value={totalSelected} hidden={totalHiddenSelected} />
       <PaginationControls
-        showAll
+        showAll={showAllRowsOption}
         pageLimit={pageSize}
         page={page + 1}
         onPageChange={(page) => onPageChange(page - 1)}

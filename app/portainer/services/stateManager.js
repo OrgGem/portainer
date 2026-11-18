@@ -1,4 +1,5 @@
 import moment from 'moment';
+import { applyAppearance } from '@/react/portainer/appearance/appearance';
 
 angular.module('portainer.app').factory('StateManager', StateManagerFactory);
 
@@ -58,7 +59,8 @@ function StateManagerFactory($async, $q, SystemService, InfoHelper, LocalStorage
 
   manager.clean = function () {
     manager.cleanEndpoint();
-    state.application = {};
+    // Keep public branding on the logout and subsequent login screen.
+    state.application = { logo: state.application.logo, brandName: state.application.brandName };
   };
 
   manager.cleanEndpoint = function () {
@@ -69,6 +71,13 @@ function StateManagerFactory($async, $q, SystemService, InfoHelper, LocalStorage
 
   manager.updateLogo = function (logoURL) {
     state.application.logo = logoURL;
+    LocalStorage.storeApplicationState(state.application);
+  };
+
+  manager.updateAppearance = function (appearance, logoURL) {
+    state.application.brandName = appearance?.Branding?.Name || 'Portainer';
+    state.application.logo = logoURL;
+    applyAppearance(appearance);
     LocalStorage.storeApplicationState(state.application);
   };
 
@@ -88,6 +97,8 @@ function StateManagerFactory($async, $q, SystemService, InfoHelper, LocalStorage
     state.application.instanceId = status.InstanceID;
 
     state.application.logo = settings.LogoURL;
+    state.application.brandName = settings.Appearance?.Branding?.Name || 'Portainer';
+    applyAppearance(settings.Appearance);
     state.application.snapshotInterval = settings.SnapshotInterval;
     state.application.enableEdgeComputeFeatures = settings.EnableEdgeComputeFeatures;
     state.application.validity = moment().unix();
@@ -125,6 +136,15 @@ function StateManagerFactory($async, $q, SystemService, InfoHelper, LocalStorage
       const applicationState = LocalStorage.getApplicationState();
       if (isAppStateValid(applicationState)) {
         state.application = applicationState;
+        // Appearance is public and must not be held back by the application cache.
+        try {
+          const settings = await SettingsService.publicSettings();
+          manager.updateAppearance(settings.Appearance, settings.LogoURL);
+        } catch (error) {
+          state.application.brandName = 'Portainer';
+          state.application.logo = '';
+          applyAppearance();
+        }
       } else {
         await loadApplicationState();
       }

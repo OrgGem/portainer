@@ -44,14 +44,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Test standalone controls and build limits
+      - name: Test standalone controls, appearance, and logs
         env:
           CGO_ENABLED: '0'
         run: |
           go test -mod=readonly -p 2 -count=1 -timeout=10m \
-            ./pkg/authorization ./pkg/libstack/compose ./api/exec \
+            ./api ./api/authlog ./api/oauth ./api/exec \
+            ./pkg/authorization ./pkg/libstack/compose \
             ./api/docker/resourcemetrics ./api/stacks/stackconfig \
             ./api/stacks/vaultrefs ./api/stacks/deployments ./api/uac \
+            ./api/http/handler/auth ./api/http/handler/useractivity \
             ./api/http/handler/docker/... ./api/http/handler/roles \
             ./api/http/handler/users ./api/http/handler/stacks \
             ./api/http/handler/endpoints ./api/http/handler/endpointgroups \
@@ -84,6 +86,9 @@ jobs:
             app/react/docker/stacks/ItemView/StackControls \
             app/react/docker/volumes/BrowseView/VolumeTextEditor.test.tsx \
             app/react/portainer/vault-mappings \
+            app/react/portainer/appearance \
+            app/react/portainer/logs \
+            app/react/sidebar/sidebarStore.test.ts \
             app/react/portainer/settings/SettingsView/BuildPolicyPanel.test.tsx \
             app/react/portainer/users/RolesView \
             app/react/portainer/environments/environment-groups/ItemView/tabs/AccessTab.test.tsx \

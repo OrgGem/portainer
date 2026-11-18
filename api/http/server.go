@@ -10,6 +10,7 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/adminmonitor"
 	"github.com/portainer/portainer/api/apikey"
+	"github.com/portainer/portainer/api/authlog"
 	"github.com/portainer/portainer/api/crypto"
 	"github.com/portainer/portainer/api/dataservices"
 	"github.com/portainer/portainer/api/docker"
@@ -48,6 +49,7 @@ import (
 	"github.com/portainer/portainer/api/http/handler/teams"
 	"github.com/portainer/portainer/api/http/handler/templates"
 	"github.com/portainer/portainer/api/http/handler/upload"
+	"github.com/portainer/portainer/api/http/handler/useractivity"
 	"github.com/portainer/portainer/api/http/handler/users"
 	"github.com/portainer/portainer/api/http/handler/webhooks"
 	"github.com/portainer/portainer/api/http/handler/websocket"
@@ -130,8 +132,11 @@ func (server *Server) Start(ctx context.Context) error {
 	offlineGate := offlinegate.NewOfflineGate()
 
 	passwordStrengthChecker := security.NewPasswordStrengthChecker(server.DataStore.Settings())
+	authLogs := authlog.NewStore(server.FileService.GetDatastorePath())
+	authLogs.Start(ctx)
 
 	var authHandler = auth.NewHandler(requestBouncer, rateLimiter, passwordStrengthChecker, server.KubernetesClientFactory)
+	authHandler.AuthLog = authLogs
 	authHandler.DataStore = server.DataStore
 	authHandler.CryptoService = server.CryptoService
 	authHandler.JWTService = server.JWTService
@@ -335,6 +340,7 @@ func (server *Server) Start(ctx context.Context) error {
 		TemplatesHandler:       templatesHandler,
 		UploadHandler:          uploadHandler,
 		UserHandler:            userHandler,
+		UserActivityHandler:    useractivity.NewHandler(requestBouncer, server.DataStore, authLogs),
 		WebSocketHandler:       websocketHandler,
 		WebhookHandler:         webhookHandler,
 	}

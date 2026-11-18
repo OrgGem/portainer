@@ -8,50 +8,54 @@ import { Button } from '@@/buttons';
 import { JsonTree } from '@@/JsonTree';
 
 import { ActivityLog } from './types';
-import { getSortType } from './useActivityLogs';
 
 const columnHelper = createColumnHelper<ActivityLog>();
 
 const columns = [
   columnHelper.accessor('timestamp', {
-    id: 'Timestamp',
     header: 'Time',
-    cell: ({ getValue }) => {
-      const value = getValue();
-      return value ? isoDateFromTimestamp(value) : '';
-    },
+    cell: ({ getValue }) =>
+      getValue() ? isoDateFromTimestamp(getValue()) : 'Unknown',
   }),
   columnHelper.accessor('username', {
-    id: 'Username',
     header: 'User',
+    cell: ({ getValue }) => getValue() || 'Unknown',
   }),
   columnHelper.accessor('context', {
-    id: 'Context',
     header: 'Environment',
+    cell: ({ getValue }) => getValue() || 'Unknown',
   }),
-  columnHelper.accessor('action', {
-    id: 'Action',
-    header: 'Action',
+  columnHelper.accessor('stackName', {
+    header: 'Stack',
+    enableSorting: false,
+    cell: ({ getValue }) => getValue() || '—',
+  }),
+  columnHelper.accessor('source', { header: 'Source' }),
+  columnHelper.accessor('action', { header: 'Action' }),
+  columnHelper.accessor('status', {
+    header: 'Status',
+    cell: ({ getValue }) => getValue().replaceAll('_', ' '),
   }),
   columnHelper.accessor('payload', {
-    header: 'Payload',
+    header: 'Details',
     enableSorting: false,
-    cell: ({ row, getValue }) =>
-      getValue() ? (
-        <Button
-          color="link"
-          onClick={() => row.toggleExpanded()}
-          icon={Search}
-          data-cy={`activity-logs-inspect_${row.index}`}
-        >
-          inspect
-        </Button>
-      ) : null,
+    cell: ({ row }) => (
+      <Button
+        color="link"
+        onClick={() => row.toggleExpanded()}
+        icon={Search}
+        aria-expanded={row.getIsExpanded()}
+        data-cy={`activity-logs-inspect_${row.index}`}
+      >
+        Inspect
+      </Button>
+    ),
   }),
 ];
 
 export function ActivityLogsTable({
   dataset,
+  isLoading,
   currentPage,
   keyword,
   limit,
@@ -64,14 +68,15 @@ export function ActivityLogsTable({
 }: {
   keyword: string;
   onChangeKeyword(keyword: string): void;
-  sort: { id: string; desc: boolean } | undefined;
-  onChangeSort(sort: { id: string; desc: boolean } | undefined): void;
+  sort: { id: string; desc: boolean };
+  onChangeSort(sort: { id: string; desc: boolean }): void;
   limit: number;
   onChangeLimit(limit: number): void;
   currentPage: number;
   onChangePage(page: number): void;
   totalItems: number;
-  dataset?: Array<ActivityLog>;
+  isLoading: boolean;
+  dataset?: ActivityLog[];
 }) {
   return (
     <ExpandableDatatable<ActivityLog>
@@ -79,25 +84,21 @@ export function ActivityLogsTable({
       titleIcon={History}
       columns={columns}
       dataset={dataset || []}
-      isLoading={!dataset}
+      isLoading={isLoading}
+      emptyContentLabel="No activity logs match the selected filters."
       settingsManager={{
         pageSize: limit,
         search: keyword,
         setPageSize: onChangeLimit,
         setSearch: onChangeKeyword,
-        setSortBy: (id, desc) =>
-          onChangeSort({ id: getSortType(id) || 'Timestamp', desc }),
-        sortBy: sort
-          ? {
-              id: sort.id,
-              desc: sort.desc,
-            }
-          : undefined,
+        setSortBy: (id, desc) => onChangeSort({ id: id || 'timestamp', desc }),
+        sortBy: sort,
       }}
       page={currentPage}
       onPageChange={onChangePage}
       isServerSidePagination
       totalCount={totalItems}
+      showAllRowsOption={false}
       disableSelect
       renderSubRow={(row) => <SubRow item={row.original} />}
       data-cy="activity-logs-datatable"
@@ -109,7 +110,13 @@ function SubRow({ item }: { item: ActivityLog }) {
   return (
     <tr>
       <td colSpan={Number.MAX_SAFE_INTEGER}>
-        <JsonTree data={item.payload} />
+        <JsonTree
+          data={{
+            environmentId: item.environmentId,
+            stackId: item.stackId,
+            ...item.payload,
+          }}
+        />
       </td>
     </tr>
   );

@@ -2,8 +2,11 @@ package auth
 
 import (
 	"net/http"
+	"sync"
+	"time"
 
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/authlog"
 	"github.com/portainer/portainer/api/dataservices"
 	"github.com/portainer/portainer/api/http/proxy"
 	"github.com/portainer/portainer/api/http/proxy/factory/kubernetes"
@@ -22,11 +25,15 @@ type Handler struct {
 	JWTService                  portainer.JWTService
 	LDAPService                 portainer.LDAPService
 	OAuthService                portainer.OAuthService
+	AuthLog                     *authlog.Store
 	ProxyManager                *proxy.Manager
 	KubernetesTokenCacheManager *kubernetes.TokenCacheManager
 	KubernetesClientFactory     *cli.ClientFactory
 	passwordStrengthChecker     security.PasswordStrengthChecker
 	bouncer                     security.BouncerService
+	rateLimitLogMu              sync.Mutex
+	rateLimitLogNext            time.Time
+	rateLimitLogSuppressed      uint64
 }
 
 // NewHandler creates a handler to manage authentication operations.
@@ -38,12 +45,12 @@ func NewHandler(bouncer security.BouncerService, rateLimiter *security.RateLimit
 		KubernetesClientFactory: kubernetesClientFactory,
 	}
 
-	h.Handle("/auth/oauth/validate",
-		rateLimiter.LimitAccess(bouncer.PublicAccess(httperror.LoggerHandler(h.validateOAuth)))).Methods(http.MethodPost)
-	h.Handle("/auth",
-		rateLimiter.LimitAccess(bouncer.PublicAccess(httperror.LoggerHandler(h.authenticate)))).Methods(http.MethodPost)
-	h.Handle("/auth/logout",
-		bouncer.PublicAccess(httperror.LoggerHandler(h.logout))).Methods(http.MethodPost)
+	h.Handle("/auth/oauth/validate", h.recordAuth(rateLimiter,
+		rateLimiter.LimitAccessWithRejection(bouncer.PublicAccess(httperror.LoggerHandler(h.validateOAuth)), markRateLimited), authlog.OAuth, false)).Methods(http.MethodPost)
+	h.Handle("/auth", h.recordAuth(rateLimiter,
+		rateLimiter.LimitAccessWithRejection(bouncer.PublicAccess(httperror.LoggerHandler(h.authenticate)), markRateLimited), authlog.Unknown, false)).Methods(http.MethodPost)
+	h.Handle("/auth/logout", h.recordAuth(rateLimiter,
+		bouncer.PublicAccess(httperror.LoggerHandler(h.logout)), authlog.Unknown, true)).Methods(http.MethodPost)
 
 	return h
 }

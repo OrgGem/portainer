@@ -1,7 +1,7 @@
 angular.module('portainer.app').controller('MainController', MainController);
 
 /* @ngInject */
-function MainController($scope, StateManager, ThemeManager, SidebarService) {
+function MainController($scope, StateManager, SidebarService) {
   /**
    * Sidebar Toggle & Cookie Control
    */
@@ -10,5 +10,4 @@ function MainController($scope, StateManager, ThemeManager, SidebarService) {
 
   $scope.isSidebarOpen = SidebarService.isSidebarOpen;
 
-  ThemeManager.autoTheme();
 }

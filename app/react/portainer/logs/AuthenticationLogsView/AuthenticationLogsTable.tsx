@@ -7,6 +7,7 @@ import { columns } from './columns';
 
 export function AuthenticationLogsTable({
   dataset,
+  isLoading,
   currentPage,
   keyword,
   limit,
@@ -19,14 +20,15 @@ export function AuthenticationLogsTable({
 }: {
   keyword: string;
   onChangeKeyword(keyword: string): void;
-  sort: { key: string; desc: boolean };
-  onChangeSort(sort: { key: string; desc: boolean }): void;
+  sort: { id: string; desc: boolean };
+  onChangeSort(sort: { id: string; desc: boolean }): void;
   limit: number;
   onChangeLimit(limit: number): void;
   currentPage: number;
   onChangePage(page: number): void;
   totalItems: number;
-  dataset?: Array<AuthLog>;
+  isLoading: boolean;
+  dataset?: AuthLog[];
 }) {
   return (
     <Datatable<AuthLog>
@@ -34,23 +36,21 @@ export function AuthenticationLogsTable({
       titleIcon={History}
       columns={columns}
       dataset={dataset || []}
-      isLoading={!dataset}
+      isLoading={isLoading}
+      emptyContentLabel="No authentication logs match the selected filters."
       settingsManager={{
         pageSize: limit,
         search: keyword,
         setPageSize: onChangeLimit,
         setSearch: onChangeKeyword,
-        setSortBy: (key, desc) =>
-          onChangeSort({ key: key || 'timestamp', desc }),
-        sortBy: {
-          id: sort.key,
-          desc: sort.desc,
-        },
+        setSortBy: (id, desc) => onChangeSort({ id: id || 'timestamp', desc }),
+        sortBy: sort,
       }}
       page={currentPage}
       onPageChange={onChangePage}
       isServerSidePagination
       totalCount={totalItems}
+      showAllRowsOption={false}
       disableSelect
       data-cy="authentication-logs-datatable"
     />

@@ -4,12 +4,13 @@
     <div class="col-md-8 col-md-offset-2 col-sm-10 col-sm-offset-1">
       <!-- simple box logo -->
       <div class="row">
-        <img ng-if="logo" ng-src="{{ logo }}" class="simple-box-logo" />
-        <div ng-if="!ctrl.logo">
+        <img ng-if="logo" ng-src="{{ logo }}" class="simple-box-logo appearance-logo" alt="Logo" />
+        <div ng-if="!logo">
           <img src="~@/assets/images/logo_alt.svg" class="simple-box-logo hidden th-highcontrast:!block th-dark:!block" alt="Portainer" />
           <img src="~@/assets/images/logo_alt_black.svg" class="simple-box-logo block th-highcontrast:hidden th-dark:hidden" alt="Portainer" />
         </div>
       </div>
+      <div class="appearance-login-brand" ng-if="applicationState.application.brandName &amp;&amp; applicationState.application.brandName !== 'Portainer'" ng-bind="applicationState.application.brandName"></div>
       <!-- !simple box logo -->
       <!-- init password panel -->
       <div class="panel panel-default">

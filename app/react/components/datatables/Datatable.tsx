@@ -63,6 +63,7 @@ export interface Props<D extends DefaultType> extends AutomationTestingProps {
   titleIcon?: IconProps['icon'];
   initialTableState?: Partial<TableState>;
   isLoading?: boolean;
+  showAllRowsOption?: boolean;
   description?: ReactNode;
   highlightedItemId?: string;
   settingsManager: GlobalTableState<BasicTableSettings>;
@@ -90,6 +91,7 @@ export function Datatable<D extends DefaultType>({
   emptyContentLabel,
   initialTableState = {},
   isLoading,
+  showAllRowsOption = true,
   description,
   settingsManager: settings,
   renderRow = defaultRenderRow,
@@ -224,6 +226,7 @@ export function Datatable<D extends DefaultType>({
       />
 
       <DatatableFooter
+        showAllRowsOption={showAllRowsOption}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
         page={typeof page === 'number' ? page : tableState.pagination.pageIndex}

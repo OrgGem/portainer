@@ -3,7 +3,5 @@ export interface Values {
   edgeAgentCheckinInterval: number;
   loginBanner: string;
   loginBannerEnabled: boolean;
-  logo: string;
-  logoEnabled: boolean;
   templatesUrl: string;
 }

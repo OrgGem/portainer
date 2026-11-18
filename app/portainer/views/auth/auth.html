@@ -8,8 +8,9 @@
           <img src="~@/assets/images/logo_alt.svg" class="simple-box-logo hidden th-highcontrast:!block th-dark:!block" alt="Portainer" />
           <img src="~@/assets/images/logo_alt_black.svg" class="simple-box-logo block th-highcontrast:hidden th-dark:hidden" alt="Portainer" />
         </div>
-        <img ng-if="ctrl.logo" ng-src="{{ ctrl.logo }}" class="simple-box-logo" />
+        <img ng-if="ctrl.logo" ng-src="{{ ctrl.logo }}" class="simple-box-logo appearance-logo" alt="Logo" />
       </div>
+      <div class="appearance-login-brand" ng-if="applicationState.application.brandName &amp;&amp; applicationState.application.brandName !== 'Portainer'" ng-bind="applicationState.application.brandName"></div>
       <!-- !login box logo -->
 
       <div class="row p-5 text-center">

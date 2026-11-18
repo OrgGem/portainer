@@ -8,6 +8,9 @@ GitHub Actions, version tags, GHCR images and the release process.
 
 ## Phạm vi
 
+- Tùy chỉnh tên, logo, favicon, màu, font và bố cục tại **Settings → Appearance**.
+  Xem [hướng dẫn Appearance](../../docs/customization/appearance.md).
+
 - Chính sách build Compose chung: tối đa 50% CPU/RAM mỗi Docker host, mặc định
   một build/lần, UI tại **Settings → Compose build policy**.
   Environment qua Agent cần image Agent tùy chỉnh đi kèm để hỗ trợ luồng BuildKit.

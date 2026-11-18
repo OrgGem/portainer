@@ -5,6 +5,7 @@ import { User, ThemeColor } from '@/portainer/users/types';
 import { applyTheme } from '@/react/portainer/services/applyTheme';
 import { useUpdateUserMutation } from '@/react/portainer/account/useUpdateUserMutation';
 import { options as themeOptions } from '@/react/portainer/account/AccountView/theme-options';
+import { usePublicSettings } from '@/react/portainer/settings/queries';
 
 import {
   SegmentItem,
@@ -27,7 +28,8 @@ const themeSegmentItems: SegmentItem[] = themeOptions.map((option) => ({
 
 export function ThemeSelector({ user }: { user: User }) {
   const updateMutation = useUpdateUserMutation();
-  const activeTheme = user?.ThemeSettings?.color ?? 'auto';
+  const settings = usePublicSettings();
+  const activeTheme = user?.ThemeSettings?.color || settings.data?.Appearance?.DefaultTheme || 'auto';
 
   function handleThemeSelect(id: string) {
     const color = id as ThemeColor;
