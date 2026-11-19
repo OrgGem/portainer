@@ -61,6 +61,50 @@ func AesDecrypt(input io.Reader, passphrase []byte) (io.Reader, error) {
 	return aesDecrypt(input, passphrase, fips.FIPSMode())
 }
 
+// AesDecryptTo decrypts an existing backup format to output with bounded memory.
+// GCM output can contain authenticated earlier blocks if a later block fails,
+// so callers should publish it only after this function succeeds. The legacy
+// OFB format provides no authentication.
+func AesDecryptTo(input io.Reader, output io.Writer, passphrase []byte) error {
+	return aesDecryptTo(input, output, passphrase, fips.FIPSMode())
+}
+
+func aesDecryptTo(input io.Reader, output io.Writer, passphrase []byte, fipsMode bool) error {
+	inputReader := bufio.NewReader(input)
+	header, err := inputReader.Peek(len(aesGcmFIPSHeader))
+	if err != nil {
+		return fmt.Errorf("error reading encrypted backup file header: %w", err)
+	}
+
+	if strings.HasPrefix(string(header), aesGcmFIPSHeader) {
+		if !fipsMode {
+			return errors.New("fips encrypted file detected but fips mode is not enabled")
+		}
+		if err := aesDecryptGCMFIPSTo(inputReader, output, passphrase); err != nil {
+			return fmt.Errorf("error decrypting file: %w", err)
+		}
+		return nil
+	}
+	if strings.HasPrefix(string(header), aesGcmHeader) {
+		if fipsMode {
+			return errors.New("fips mode is enabled but non-fips encrypted file detected")
+		}
+		if err := aesDecryptGCMTo(inputReader, output, passphrase); err != nil {
+			return fmt.Errorf("error decrypting file: %w", err)
+		}
+		return nil
+	}
+
+	reader, err := aesDecryptOFB(inputReader, passphrase)
+	if err != nil {
+		return fmt.Errorf("error decrypting legacy file backup: %w", err)
+	}
+	if _, err := io.Copy(output, reader); err != nil {
+		return fmt.Errorf("error decrypting legacy file backup: %w", err)
+	}
+	return nil
+}
+
 func aesDecrypt(input io.Reader, passphrase []byte, fipsMode bool) (io.Reader, error) {
 	// Read file header to determine how it was encrypted
 	inputReader := bufio.NewReader(input)
@@ -174,20 +218,28 @@ func aesEncryptGCM(input io.Reader, output io.Writer, passphrase []byte) error {
 
 // aesDecryptGCM reads from input, decrypts with AES-256 and returns the reader to read the decrypted content from.
 func aesDecryptGCM(input io.Reader, passphrase []byte) (io.Reader, error) {
+	var buf bytes.Buffer
+	if err := aesDecryptGCMTo(input, &buf, passphrase); err != nil {
+		return nil, err
+	}
+	return &buf, nil
+}
+
+func aesDecryptGCMTo(input io.Reader, output io.Writer, passphrase []byte) error {
 	// Reader & verify header
 	header := make([]byte, len(aesGcmHeader))
 	if _, err := io.ReadFull(input, header); err != nil {
-		return nil, err
+		return err
 	}
 
 	if string(header) != aesGcmHeader {
-		return nil, errors.New("invalid header")
+		return errors.New("invalid header")
 	}
 
 	// Read salt
 	salt := make([]byte, 16) // Salt size
 	if _, err := io.ReadFull(input, salt); err != nil {
-		return nil, err
+		return err
 	}
 
 	key := argon2.IDKey(passphrase, salt, argon2TimeCost, argon2MemoryCost, argon2Threads, 32)
@@ -195,54 +247,56 @@ func aesDecryptGCM(input io.Reader, passphrase []byte) (io.Reader, error) {
 	// Initialize AES cipher block
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Create GCM mode with the cipher block
 	aesgcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Read nonce from the input reader
 	nonce := NewNonce(aesgcm.NonceSize())
 	if err := nonce.Read(input); err != nil {
-		return nil, err
+		return err
 	}
 
-	// Initialize a buffer to store decrypted data
-	buf := bytes.Buffer{}
 	plaintext := make([]byte, aesGcmBlockSize)
+	ciphertextBlock := make([]byte, aesGcmBlockSize+aesgcm.Overhead())
 
 	// Decrypt the ciphertext in blocks
 	for {
-		// Read a block of ciphertext from the input reader
-		ciphertextBlock := make([]byte, aesGcmBlockSize+aesgcm.Overhead()) // Adjust block size as needed
 		n, err := io.ReadFull(input, ciphertextBlock)
 		if n == 0 {
-			break // end of ciphertext
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
 		}
 
 		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, err
+			return err
 		}
 
 		// Decrypt the block of ciphertext
 		plaintext, err = aesgcm.Open(plaintext[:0], nonce.Value(), ciphertextBlock[:n], nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		if _, err := buf.Write(plaintext); err != nil {
-			return nil, err
+		written, err := output.Write(plaintext)
+		if err != nil {
+			return err
+		}
+		if written != len(plaintext) {
+			return io.ErrShortWrite
 		}
 
 		if err := nonce.Increment(); err != nil {
-			return nil, err
+			return err
 		}
 	}
-
-	return &buf, nil
 }
 
 // aesEncryptGCMFIPS reads from input, encrypts with AES-256 in a fips compliant
@@ -307,67 +361,76 @@ func aesEncryptGCMFIPS(input io.Reader, output io.Writer, passphrase []byte) err
 // aesDecryptGCMFIPS reads from input, decrypts with AES-256 in a fips compliant
 // way and returns the reader to read the decrypted content from.
 func aesDecryptGCMFIPS(input io.Reader, passphrase []byte) (io.Reader, error) {
+	var buf bytes.Buffer
+	if err := aesDecryptGCMFIPSTo(input, &buf, passphrase); err != nil {
+		return nil, err
+	}
+	return &buf, nil
+}
+
+func aesDecryptGCMFIPSTo(input io.Reader, output io.Writer, passphrase []byte) error {
 	// Reader & verify header
 	header := make([]byte, len(aesGcmFIPSHeader))
 	if _, err := io.ReadFull(input, header); err != nil {
-		return nil, err
+		return err
 	}
 
 	if string(header) != aesGcmFIPSHeader {
-		return nil, errors.New("invalid header")
+		return errors.New("invalid header")
 	}
 
 	// Read salt
 	salt := make([]byte, pbkdf2SaltLength)
 	if _, err := io.ReadFull(input, salt); err != nil {
-		return nil, err
+		return err
 	}
 
 	key, err := pbkdf2.Key(sha256.New, string(passphrase), salt, pbkdf2Iterations, 32)
 	if err != nil {
-		return nil, fmt.Errorf("error deriving key: %w", err)
+		return fmt.Errorf("error deriving key: %w", err)
 	}
 
 	// Initialize AES cipher block
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// Initialize a buffer to store decrypted data
-	buf := bytes.Buffer{}
+	aesgcm, err := cipher.NewGCMWithRandomNonce(block)
+	if err != nil {
+		return err
+	}
+	ciphertextBlock := make([]byte, aesGcmFIPSBlockSize+aesgcm.Overhead())
+	plaintext := make([]byte, 0, aesGcmFIPSBlockSize)
 
 	// Decrypt the ciphertext in blocks
 	for {
-		// Create GCM mode with the cipher block
-		aesgcm, err := cipher.NewGCMWithRandomNonce(block)
-		if err != nil {
-			return nil, err
-		}
-
-		// Read a block of ciphertext from the input reader
-		ciphertextBlock := make([]byte, aesGcmFIPSBlockSize+aesgcm.Overhead())
 		n, err := io.ReadFull(input, ciphertextBlock)
 		if n == 0 {
-			break // end of ciphertext
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
 		}
 
 		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, err
+			return err
 		}
 
 		// Decrypt the block of ciphertext
-		plaintext, err := aesgcm.Open(nil, nil, ciphertextBlock[:n], nil)
+		plaintext, err = aesgcm.Open(plaintext[:0], nil, ciphertextBlock[:n], nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		if _, err := buf.Write(plaintext); err != nil {
-			return nil, err
+		written, err := output.Write(plaintext)
+		if err != nil {
+			return err
+		}
+		if written != len(plaintext) {
+			return io.ErrShortWrite
 		}
 	}
-
-	return &buf, nil
 }
 
 // aesDecryptOFB reads from input, decrypts with AES-256 and returns the reader to a read decrypted content from.

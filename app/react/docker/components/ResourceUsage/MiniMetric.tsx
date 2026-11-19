@@ -19,12 +19,14 @@ export function MiniMetric({
   sampledAt,
   compact = false,
   description,
+  usageOnly = false,
 }: {
   label: string;
   metric: Metric;
   sampledAt: string;
   compact?: boolean;
   description?: string;
+  usageOnly?: boolean;
 }) {
   const { used, total } = metric;
   const percent =
@@ -46,7 +48,9 @@ export function MiniMetric({
     });
   }
   const scale =
-    total !== null && total > 0 ? total : Math.max(1, ...history.points);
+    !usageOnly && total !== null && total > 0
+      ? total
+      : Math.max(1, ...history.points);
   const points = history.points
     .map(
       (p, i) =>
@@ -58,29 +62,43 @@ export function MiniMetric({
     <div
       title={
         description ||
-        (compact
-          ? `${label}: ${formatMetric(used, metric.unit)} / ${total === null ? 'no known quota' : formatMetric(total, metric.unit)}\n${metric.basis}`
-          : metric.basis)
+        (usageOnly
+          ? `${label}: ${formatMetric(used, metric.unit)}`
+          : compact
+            ? `${label}: ${formatMetric(used, metric.unit)} / ${total === null ? 'no known quota' : formatMetric(total, metric.unit)}\n${metric.basis}`
+            : metric.basis)
       }
       className={compact ? 'min-w-0 text-xs' : 'min-w-[210px] text-xs'}
     >
       <div className="flex items-center justify-between gap-2">
         {compact ? (
-          <span className="min-w-0 flex-1 truncate tabular-nums">
-            <span className="font-medium">{label}</span>{' '}
-            {formatMetric(used, metric.unit)} /{' '}
-            {total === null
-              ? 'no known quota'
-              : formatMetric(total, metric.unit)}
+          <span className="flex min-w-0 flex-1 items-center gap-1 tabular-nums">
+            <span className="min-w-0 truncate font-medium">{label}</span>
+            <span className="shrink-0">
+              {formatMetric(used, metric.unit)}
+              {!usageOnly && (
+                <>
+                  {' / '}
+                  {total === null
+                    ? 'no known quota'
+                    : formatMetric(total, metric.unit)}
+                </>
+              )}
+            </span>
           </span>
         ) : (
           <>
             <span className="font-medium">{label}</span>
             <span className="whitespace-nowrap tabular-nums">
-              {formatMetric(used, metric.unit)} /{' '}
-              {total === null
-                ? 'no known quota'
-                : formatMetric(total, metric.unit)}
+              {formatMetric(used, metric.unit)}
+              {!usageOnly && (
+                <>
+                  {' / '}
+                  {total === null
+                    ? 'no known quota'
+                    : formatMetric(total, metric.unit)}
+                </>
+              )}
             </span>
           </>
         )}
@@ -102,26 +120,28 @@ export function MiniMetric({
           )}
         </svg>
       </div>
-      <div
-        role={percent === null ? undefined : 'meter'}
-        aria-label={label}
-        aria-valuemin={percent === null ? undefined : 0}
-        aria-valuemax={percent === null ? undefined : 100}
-        aria-valuenow={
-          percent === null ? undefined : Math.min(100, Math.max(0, percent))
-        }
-        aria-valuetext={`${formatMetric(used, metric.unit)} of ${total === null ? 'unknown quota' : formatMetric(total, metric.unit)}; ${metric.basis}`}
-        className="h-1 overflow-hidden rounded bg-gray-3 th-dark:bg-gray-8"
-      >
-        {percent !== null && (
-          <div
-            className={
-              percent >= 90 ? 'h-full bg-warning-6' : 'h-full bg-blue-6'
-            }
-            style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
-          />
-        )}
-      </div>
+      {!usageOnly && (
+        <div
+          role={percent === null ? undefined : 'meter'}
+          aria-label={label}
+          aria-valuemin={percent === null ? undefined : 0}
+          aria-valuemax={percent === null ? undefined : 100}
+          aria-valuenow={
+            percent === null ? undefined : Math.min(100, Math.max(0, percent))
+          }
+          aria-valuetext={`${formatMetric(used, metric.unit)} of ${total === null ? 'unknown quota' : formatMetric(total, metric.unit)}; ${metric.basis}`}
+          className="h-1 overflow-hidden rounded bg-gray-3 th-dark:bg-gray-8"
+        >
+          {percent !== null && (
+            <div
+              className={
+                percent >= 90 ? 'h-full bg-warning-6' : 'h-full bg-blue-6'
+              }
+              style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

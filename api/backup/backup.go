@@ -16,8 +16,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const rwxr__r__ os.FileMode = 0o744
-
 var filesToBackup = []string{
 	"certs",
 	"chisel",
@@ -33,11 +31,18 @@ var filesToBackup = []string{
 }
 
 // Creates a tar.gz system archive and encrypts it if password is not empty. Returns a path to the archive file.
-func CreateBackupArchive(password string, gate *offlinegate.OfflineGate, datastore dataservices.DataStore, filestorePath string) (string, error) {
+func CreateBackupArchive(password string, gate *offlinegate.OfflineGate, datastore dataservices.DataStore, filestorePath string) (_ string, err error) {
 	backupDirPath, err := backupDatabaseAndFilesystem(gate, datastore, filestorePath)
 	if err != nil {
 		return "", err
 	}
+	defer func() {
+		if err != nil {
+			if cleanupErr := os.RemoveAll(backupDirPath); cleanupErr != nil {
+				log.Warn().Err(cleanupErr).Msg("failed to remove incomplete backup")
+			}
+		}
+	}()
 
 	archivePath, err := archive.TarGzDir(backupDirPath)
 	if err != nil {
@@ -54,14 +59,25 @@ func CreateBackupArchive(password string, gate *offlinegate.OfflineGate, datasto
 	return archivePath, nil
 }
 
-func backupDatabaseAndFilesystem(gate *offlinegate.OfflineGate, datastore dataservices.DataStore, filestorePath string) (string, error) {
+func backupDatabaseAndFilesystem(gate *offlinegate.OfflineGate, datastore dataservices.DataStore, filestorePath string) (_ string, err error) {
 	unlock := gate.Lock()
 	defer unlock()
 
-	backupDirPath := filesystem.JoinPaths(filestorePath, "backup", time.Now().Format("2006-01-02_15-04-05"))
-	if err := os.MkdirAll(backupDirPath, rwxr__r__); err != nil {
+	backupParent := filesystem.JoinPaths(filestorePath, "backup")
+	if err := os.MkdirAll(backupParent, 0o700); err != nil {
 		return "", errors.Wrap(err, "Failed to create backup dir")
 	}
+	backupDirPath, err := os.MkdirTemp(backupParent, time.Now().Format("2006-01-02_15-04-05-"))
+	if err != nil {
+		return "", errors.Wrap(err, "Failed to create backup dir")
+	}
+	defer func() {
+		if err != nil {
+			if cleanupErr := os.RemoveAll(backupDirPath); cleanupErr != nil {
+				log.Warn().Err(cleanupErr).Msg("failed to remove incomplete backup")
+			}
+		}
+	}()
 
 	// new export
 	exportFilename := filesystem.JoinPaths(backupDirPath, fmt.Sprintf("export-%d.json", time.Now().Unix()))
@@ -74,6 +90,9 @@ func backupDatabaseAndFilesystem(gate *offlinegate.OfflineGate, datastore datase
 
 	if err := backupDb(backupDirPath, datastore); err != nil {
 		return "", errors.Wrap(err, "Failed to backup database")
+	}
+	if err := backupStackConfigurations(backupDirPath, datastore); err != nil {
+		return "", errors.Wrap(err, "Failed to backup stack configuration revisions")
 	}
 
 	for _, filename := range filesToBackup {
@@ -92,11 +111,13 @@ func backupDb(backupDirPath string, datastore dataservices.DataStore) error {
 	if err != nil {
 		return fmt.Errorf("failed to create database backup file: %w", err)
 	}
-	defer logs.CloseAndLogErr(f)
-
-	return filesystem.RunWithTimeout(dbFileName, filesystem.BackupTimeout, func() error {
+	err = filesystem.RunWithTimeout(dbFileName, filesystem.BackupTimeout, func() error {
 		return datastore.BackupTo(f)
 	})
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 func encrypt(path string, passphrase string) (string, error) {
@@ -112,5 +133,9 @@ func encrypt(path string, passphrase string) (string, error) {
 		return "", err
 	}
 
-	return outFileName, crypto.AesEncrypt(in, out, []byte(passphrase))
+	err = crypto.AesEncrypt(in, out, []byte(passphrase))
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	return outFileName, err
 }

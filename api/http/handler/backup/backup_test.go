@@ -59,7 +59,7 @@ func contains(t *testing.T, list []string, path string) {
 	copyContent, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	assert.Equal(t, "content\n", string(copyContent))
+	assert.Equal(t, "content", strings.TrimSpace(string(copyContent)))
 }
 
 func Test_backupHandlerWithoutPassword_shouldCreateATarballArchive(t *testing.T) {
@@ -72,7 +72,7 @@ func Test_backupHandlerWithoutPassword_shouldCreateATarballArchive(t *testing.T)
 
 	handlerErr := NewHandler(
 		testhelpers.NewTestRequestBouncer(),
-		testhelpers.NewDatastore(),
+		testhelpers.NewDatastore(testhelpers.WithStacks(nil)),
 		gate,
 		prepareFilestorePath(t),
 		func() {},
@@ -118,7 +118,7 @@ func Test_backupHandlerWithPassword_shouldCreateEncryptedATarballArchive(t *test
 
 	handlerErr := NewHandler(
 		testhelpers.NewTestRequestBouncer(),
-		testhelpers.NewDatastore(),
+		testhelpers.NewDatastore(testhelpers.WithStacks(nil)),
 		gate,
 		prepareFilestorePath(t),
 		func() {},

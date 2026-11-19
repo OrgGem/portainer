@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/portainer/portainer/api/archive"
@@ -16,6 +15,7 @@ import (
 	"github.com/portainer/portainer/api/dataservices"
 	"github.com/portainer/portainer/api/filesystem"
 	"github.com/portainer/portainer/api/http/offlinegate"
+	"github.com/portainer/portainer/api/logs"
 
 	"github.com/rs/zerolog/log"
 )
@@ -24,39 +24,61 @@ var filesToRestore = append(filesToBackup, "portainer.db")
 
 // Restores system state from backup archive, will trigger system shutdown, when finished.
 func RestoreArchive(archive io.Reader, password string, filestorePath string, gate *offlinegate.OfflineGate, datastore dataservices.DataStore, shutdownTrigger context.CancelFunc) error {
-	var err error
-	if password != "" {
-		archive, err = decrypt(archive, password)
-		if err != nil {
-			return errors.Wrap(err, "failed to decrypt the archive. Please ensure the password is correct and try again")
-		}
+	restoreParent := filesystem.JoinPaths(filestorePath, "restore")
+	if err := os.MkdirAll(restoreParent, 0o700); err != nil {
+		return errors.Wrap(err, "failed to prepare restore directory")
 	}
-
-	restorePath := filesystem.JoinPaths(filestorePath, "restore", time.Now().Format("20060102150405"))
+	restorePath, err := os.MkdirTemp(restoreParent, "restore-")
+	if err != nil {
+		return errors.Wrap(err, "failed to create restore directory")
+	}
 	defer func() {
-		if err := os.RemoveAll(filepath.Dir(restorePath)); err != nil {
+		if err := os.RemoveAll(restorePath); err != nil {
 			log.Warn().Err(err).Msg("failed to clean up restore files")
 		}
 	}()
 
-	if err := extractArchive(archive, restorePath); err != nil {
+	if password != "" {
+		// Finish decrypting the input before extraction, including authentication
+		// of every GCM block. Legacy OFB backups have no authentication.
+		decrypted, err := os.CreateTemp(restorePath, "decrypted-*.tar.gz")
+		if err != nil {
+			return errors.Wrap(err, "failed to prepare decrypted backup file")
+		}
+		defer logs.CloseAndLogErr(decrypted)
+		if err := crypto.AesDecryptTo(archive, decrypted, []byte(password)); err != nil {
+			return errors.Wrap(err, "failed to decrypt the archive. Please ensure the password is correct and try again")
+		}
+		if _, err := decrypted.Seek(0, io.SeekStart); err != nil {
+			return errors.Wrap(err, "failed to read decrypted backup file")
+		}
+		archive = decrypted
+	}
+
+	extractPath := filesystem.JoinPaths(restorePath, "contents")
+	if err := extractArchive(archive, extractPath); err != nil {
 		return errors.Wrap(err, "cannot extract files from the archive. Please ensure the password is correct and try again")
 	}
 
 	unlock := gate.Lock()
 	defer unlock()
 
+	// At some point, backups were created containing a subdirectory, now we need to handle both
+	restoreSourcePath, err := getRestoreSourcePath(extractPath)
+	if err != nil {
+		return errors.Wrap(err, "failed to restore from backup. Portainer database missing from backup file")
+	}
+	if err := validateRestoreDatabase(restoreSourcePath); err != nil {
+		return errors.Wrap(err, "failed to restore from backup")
+	}
+	if err := restoreStackConfigurations(restoreSourcePath); err != nil {
+		return errors.Wrap(err, "failed to restore stack configuration revisions")
+	}
 	if err := datastore.Close(); err != nil {
 		return errors.Wrap(err, "Failed to stop db")
 	}
 
-	// At some point, backups were created containing a subdirectory, now we need to handle both
-	restorePath, err = getRestoreSourcePath(restorePath)
-	if err != nil {
-		return errors.Wrap(err, "failed to restore from backup. Portainer database missing from backup file")
-	}
-
-	if err := restoreFiles(restorePath, filestorePath); err != nil {
+	if err := restoreFiles(restoreSourcePath, filestorePath); err != nil {
 		return errors.Wrap(err, "failed to restore the system state")
 	}
 
@@ -64,8 +86,25 @@ func RestoreArchive(archive io.Reader, password string, filestorePath string, ga
 	return nil
 }
 
-func decrypt(r io.Reader, password string) (io.Reader, error) {
-	return crypto.AesDecrypt(r, []byte(password))
+func validateRestoreDatabase(dir string) error {
+	found := 0
+	for _, name := range []string{boltdb.DatabaseFileName, boltdb.EncryptedDatabaseFileName} {
+		info, err := os.Lstat(filepath.Join(dir, name))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("backup database is not a regular file")
+		}
+		found++
+	}
+	if found != 1 {
+		return errors.New("backup must contain exactly one Portainer database")
+	}
+	return nil
 }
 
 func extractArchive(r io.Reader, destinationDirPath string) error {

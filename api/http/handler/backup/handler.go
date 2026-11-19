@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/portainer/portainer/api/adminmonitor"
+	"github.com/portainer/portainer/api/backup/s3backup"
 	"github.com/portainer/portainer/api/dataservices"
 	"github.com/portainer/portainer/api/http/offlinegate"
 	"github.com/portainer/portainer/api/http/security"
@@ -22,6 +23,7 @@ type Handler struct {
 	filestorePath   string
 	shutdownTrigger context.CancelFunc
 	adminMonitor    *adminmonitor.Monitor
+	s3Backup        *s3backup.Service
 	SetupToken      string
 }
 
@@ -42,12 +44,21 @@ func NewHandler(
 		filestorePath:   filestorePath,
 		shutdownTrigger: shutdownTrigger,
 		adminMonitor:    adminMonitor,
+		s3Backup:        s3backup.NewService(dataStore, gate, filestorePath),
 	}
 
 	h.Handle("/backup", bouncer.RestrictedAccess(adminAccess(httperror.LoggerHandler(h.backup)))).Methods(http.MethodPost)
+	h.Handle("/backup/s3/settings", bouncer.RestrictedAccess(adminAccess(httperror.LoggerHandler(h.s3SettingsGet)))).Methods(http.MethodGet)
+	h.Handle("/backup/s3/settings", bouncer.RestrictedAccess(adminAccess(httperror.LoggerHandler(h.s3SettingsSave)))).Methods(http.MethodPost)
+	h.Handle("/backup/s3/execute", bouncer.RestrictedAccess(adminAccess(httperror.LoggerHandler(h.s3Execute)))).Methods(http.MethodPost)
 	h.Handle("/restore", bouncer.PublicAccess(httperror.LoggerHandler(h.restore))).Methods(http.MethodPost)
 
 	return h
+}
+
+// Start restores background schedules and stops them when ctx is cancelled.
+func (h *Handler) Start(ctx context.Context) {
+	h.s3Backup.Start(ctx)
 }
 
 func adminAccess(next http.Handler) http.Handler {

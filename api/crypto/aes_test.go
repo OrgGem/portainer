@@ -1,8 +1,10 @@
 package crypto
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"errors"
 	"io"
 	"math/rand"
 	"os"
@@ -446,4 +448,89 @@ func Test_hasEncryptedHeader(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func Test_aesDecryptTo_roundTripsGCMFormats(t *testing.T) {
+	tests := []struct {
+		name      string
+		blockSize int
+		encrypt   encryptFunc
+		fipsMode  bool
+	}{
+		{
+			name:      "GCM multiple blocks",
+			blockSize: aesGcmBlockSize,
+			encrypt:   aesEncryptGCM,
+		},
+		{
+			name:      "FIPS GCM multiple blocks",
+			blockSize: aesGcmFIPSBlockSize,
+			encrypt:   aesEncryptGCMFIPS,
+			fipsMode:  true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			plaintext := make([]byte, test.blockSize+97)
+			for i := range plaintext {
+				plaintext[i] = byte(i*31 + i/17)
+			}
+
+			var encrypted bytes.Buffer
+			require.NoError(t, test.encrypt(bytes.NewReader(plaintext), &encrypted, []byte("passphrase")))
+
+			var decrypted bytes.Buffer
+			err := aesDecryptTo(bytes.NewReader(encrypted.Bytes()), &decrypted, []byte("passphrase"), test.fipsMode)
+			require.NoError(t, err)
+			assert.Equal(t, plaintext, decrypted.Bytes())
+		})
+	}
+}
+
+func Test_aesDecryptTo_rejectsCorruptLaterGCMBlock(t *testing.T) {
+	plaintext := make([]byte, 2*aesGcmBlockSize+17)
+	for i := range plaintext {
+		plaintext[i] = byte(i*13 + i/11)
+	}
+
+	var encrypted bytes.Buffer
+	require.NoError(t, aesEncryptGCM(bytes.NewReader(plaintext), &encrypted, []byte("passphrase")))
+
+	corrupt := append([]byte(nil), encrypted.Bytes()...)
+	firstBlockEnd := len(aesGcmHeader) + 16 + 12 + aesGcmBlockSize + 16
+	corrupt[firstBlockEnd] ^= 0x80
+
+	var decrypted bytes.Buffer
+	err := aesDecryptTo(bytes.NewReader(corrupt), &decrypted, []byte("passphrase"), false)
+	require.Error(t, err)
+	assert.Len(t, decrypted.Bytes(), aesGcmBlockSize, "only the first authenticated block may have been written")
+}
+
+func Test_aesDecryptTo_propagatesWriterErrors(t *testing.T) {
+	plaintext := bytes.Repeat([]byte("encrypted payload"), 512)
+	var encrypted bytes.Buffer
+	require.NoError(t, aesEncryptGCM(bytes.NewReader(plaintext), &encrypted, []byte("passphrase")))
+
+	wantErr := errors.New("writer failed")
+	err := aesDecryptTo(bytes.NewReader(encrypted.Bytes()), errorWriter{err: wantErr}, []byte("passphrase"), false)
+	require.ErrorIs(t, err, wantErr)
+}
+
+func Test_aesDecryptTo_readsLegacyOFBArchives(t *testing.T) {
+	plaintext := bytes.Repeat([]byte("legacy backup contents\x00"), 1024)
+	var encrypted bytes.Buffer
+	require.NoError(t, legacyAesEncrypt(bytes.NewReader(plaintext), &encrypted, []byte("passphrase")))
+
+	var decrypted bytes.Buffer
+	require.NoError(t, AesDecryptTo(bytes.NewReader(encrypted.Bytes()), &decrypted, []byte("passphrase")))
+	assert.Equal(t, plaintext, decrypted.Bytes())
+}
+
+type errorWriter struct {
+	err error
+}
+
+func (writer errorWriter) Write([]byte) (int, error) {
+	return 0, writer.err
 }

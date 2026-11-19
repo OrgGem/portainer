@@ -14,24 +14,17 @@ import (
 	"github.com/portainer/portainer/api/logs"
 )
 
-// TarGzDir creates a tar.gz archive and returns it's path.
-// abosolutePath should be an absolute path to a directory.
-// Archive name will be <directoryName>.tar.gz and will be placed next to the directory.
+// TarGzDir creates a tar.gz archive inside the given directory.
 func TarGzDir(absolutePath string) (string, error) {
 	targzPath := filesystem.JoinPaths(absolutePath, filepath.Base(absolutePath)+".tar.gz")
 	outFile, err := os.Create(targzPath)
 	if err != nil {
 		return "", err
 	}
-	defer logs.CloseAndLogErr(outFile)
-
 	zipWriter := gzip.NewWriter(outFile)
-	defer logs.CloseAndLogErr(zipWriter)
-
 	tarWriter := tar.NewWriter(zipWriter)
-	defer logs.CloseAndLogErr(tarWriter)
 
-	err = filepath.Walk(absolutePath, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(absolutePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -48,10 +41,13 @@ func TarGzDir(absolutePath string) (string, error) {
 		return addToArchive(tarWriter, pathInArchive, path, info)
 	})
 
-	return targzPath, err
+	// Closing the writers completes the archive and must succeed for a backup
+	// to be reported as valid.
+	closeErr := errors.Join(tarWriter.Close(), zipWriter.Close(), outFile.Close())
+	return targzPath, errors.Join(walkErr, closeErr)
 }
 
-func addToArchive(tarWriter *tar.Writer, pathInArchive string, path string, info os.FileInfo) error {
+func addToArchive(tarWriter *tar.Writer, pathInArchive string, path string, info os.FileInfo) (err error) {
 	if info.IsDir() {
 		return nil
 	}
@@ -60,6 +56,9 @@ func addToArchive(tarWriter *tar.Writer, pathInArchive string, path string, info
 	if err != nil {
 		return err
 	}
+	defer func() {
+		err = errors.Join(err, file.Close())
+	}()
 
 	stat, err := file.Stat()
 	if err != nil {
@@ -117,10 +116,11 @@ func ExtractTarGz(r io.Reader, outputDirPath string) error {
 			if err != nil {
 				return fmt.Errorf("Failed to create file %s", header.Name)
 			}
-			if _, err := io.Copy(outFile, tarReader); err != nil {
-				return fmt.Errorf("Failed to extract file %s", header.Name)
+			_, copyErr := io.Copy(outFile, tarReader)
+			closeErr := outFile.Close()
+			if err := errors.Join(copyErr, closeErr); err != nil {
+				return fmt.Errorf("failed to extract file %s: %w", header.Name, err)
 			}
-			logs.CloseAndLogErr(outFile)
 		default:
 			return fmt.Errorf("tar: unknown type: %v in %s",
 				header.Typeflag,

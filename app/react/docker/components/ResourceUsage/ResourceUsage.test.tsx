@@ -35,7 +35,12 @@ const fixture: ResourceUsage = {
       name: 'app-data',
       type: 'volume',
       readOnly: false,
-      data: { used: null, total: null, unit: 'bytes', basis: 'unknown' },
+      data: {
+        used: 100 * 1024,
+        total: 200 * 1024,
+        unit: 'bytes',
+        basis: 'volume quota',
+      },
       filesystem: {
         used: 100,
         total: 1000,
@@ -54,7 +59,7 @@ const env = {
   Status: EnvironmentStatus.Up,
 };
 
-test('renders quota-relative usage, mini charts and mount capacities in the list row', async () => {
+test('renders CPU and RAM quotas while container storage shows usage only', async () => {
   server.use(
     http.get('/api/endpoints/1/containers/abc/metrics', () =>
       HttpResponse.json(fixture)
@@ -71,11 +76,98 @@ test('renders quota-relative usage, mini charts and mount capacities in the list
   expect(screen.getByText('Vol /data')).toBeVisible();
   expect(screen.getAllByTitle(/app-data/)[0]).toHaveAttribute(
     'title',
-    expect.stringContaining('Shared filesystem: 100 B / 1000 B')
+    expect.stringContaining('Volume data: 100.0 KiB')
   );
+  expect(screen.getByTitle('Layer: 4.0 KiB')).toHaveTextContent(
+    /Layer\s*4.0 KiB/
+  );
+  expect(screen.getAllByTitle(/Volume data: 100.0 KiB/).length).toBeGreaterThan(
+    0
+  );
+  expect(screen.getByText('Vol /data').parentElement).toHaveTextContent(
+    '100.0 KiB'
+  );
+  expect(screen.queryByText(/100\.0 KiB \/ 200\.0 KiB/)).toBeNull();
+  expect(screen.queryByText(/Shared filesystem:/)).toBeNull();
+  expect(screen.queryByRole('meter', { name: 'Layer' })).toBeNull();
   expect(screen.queryByRole('meter', { name: 'Volume data' })).toBeNull();
 
   expect(container.querySelectorAll('svg polyline').length).toBeGreaterThan(0);
+});
+
+test('shows zero and unavailable mount measurements without capacity', async () => {
+  server.use(
+    http.get('/api/endpoints/1/containers/abc/metrics', () =>
+      HttpResponse.json({
+        ...fixture,
+        writableLayer: {
+          ...fixture.writableLayer!,
+          used: 0,
+          total: 8 * 1024,
+        },
+        mounts: [
+          {
+            ...fixture.mounts[0],
+            data: { ...fixture.mounts[0].data, used: 0, total: 4096 },
+          },
+          {
+            ...fixture.mounts[0],
+            target: '/unmeasured',
+            data: { ...fixture.mounts[0].data, used: null, total: null },
+          },
+        ],
+      })
+    )
+  );
+  const Panel = withTestQueryProvider(ResourceUsagePanel);
+  render(<Panel environment={env} containerId="abc" />);
+
+  expect(await screen.findAllByTitle('Layer: 0 B')).not.toHaveLength(0);
+  expect(screen.getByText('Vol /data').parentElement).toHaveTextContent('0 B');
+  expect(screen.getByText('+1')).toBeVisible();
+  const mountDetails = screen.getAllByTitle(/Volume data: 0 B/);
+  expect(mountDetails.length).toBeGreaterThan(0);
+  expect(
+    mountDetails.some((element) =>
+      element.getAttribute('title')?.includes('Volume data: Unavailable')
+    )
+  ).toBe(true);
+  expect(screen.queryByText(/4096 B|8\.0 KiB/)).toBeNull();
+});
+
+test('retains host filesystem capacities in the host resource panel', async () => {
+  server.use(
+    http.get('/api/endpoints/1/metrics', () =>
+      HttpResponse.json({
+        ...fixture,
+        writableLayer: undefined,
+        mounts: [
+          {
+            ...fixture.mounts[0],
+            type: 'filesystem',
+            target: '/var/lib/docker',
+            data: {
+              used: 900,
+              total: 1000,
+              unit: 'bytes',
+              basis: 'host filesystem',
+            },
+            filesystem: undefined,
+          },
+        ],
+      })
+    )
+  );
+  const Panel = withTestQueryProvider(ResourceUsagePanel);
+  render(<Panel environment={env} />);
+
+  expect(await screen.findByText('CPU', { selector: 'span' })).toBeVisible();
+  expect(screen.getByText('Filesystem')).toBeVisible();
+  expect(screen.getByText('900 B / 1000 B')).toBeVisible();
+  expect(screen.getByRole('meter', { name: 'Filesystem' })).toHaveAttribute(
+    'aria-valuenow',
+    '90'
+  );
 });
 
 test('permission failures show unavailable without fabricated zeroes', async () => {

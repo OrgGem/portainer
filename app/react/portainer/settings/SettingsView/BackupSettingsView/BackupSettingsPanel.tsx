@@ -1,6 +1,8 @@
 import { Download } from 'lucide-react';
 import { useState } from 'react';
 
+import { isBE } from '@/react/portainer/feature-flags/feature-flags.service';
+
 import { Widget, WidgetBody, WidgetTitle } from '@@/Widget';
 import { FormSection } from '@@/form-components/FormSection';
 import { BoxSelector } from '@@/BoxSelector';
@@ -8,6 +10,7 @@ import { BoxSelector } from '@@/BoxSelector';
 import { BackupFormType, options } from './backup-options';
 import { BackupFileForm } from './BackupFileForm';
 import { BackupS3Form } from './BackupS3Form';
+import { BackupS3IAMForm } from './BackupS3IAMForm';
 
 export function BackupSettingsPanel() {
   const [backupType, setBackupType] = useState(options[0].value);
@@ -30,8 +33,10 @@ export function BackupSettingsPanel() {
               radioName="backup-type"
             />
 
-            {backupType === BackupFormType.S3 ? (
+            {backupType === BackupFormType.S3 && isBE ? (
               <BackupS3Form />
+            ) : backupType === BackupFormType.S3 ? (
+              <BackupS3IAMForm />
             ) : (
               <BackupFileForm />
             )}

@@ -3,7 +3,7 @@
 Nhánh `codex/standalone-stack-controls` bắt đầu từ tag `2.45.3`, commit
 `0fa764dc81c76bb7914d65d8e62b026d7c746899`.
 
-Custom release: `2.45.3-custom.1`. See [container releases](RELEASE.md) for
+Custom release: `2.45.3-custom.3`. See [container releases](RELEASE.md) for
 GitHub Actions, version tags, GHCR images and the release process.
 
 ## Phạm vi
@@ -165,11 +165,36 @@ triển khai Agent theo [hướng dẫn](VAULT-MAPPINGS.md).
 
 ## Backup và vận hành
 
-Backup đồng bộ cả volume `/data` **và** `STACK_CONFIG_ROOT`; backup Portainer CE
-thông thường không bao gồm thư mục cấu hình ngoài `/data`. Metadata thiếu file
-sẽ bị kiểm tra hash từ chối apply. File cấu hình cũ được giữ lại khi xóa stack;
-admin quản lý lưu trữ/retention sau khi xác nhận không còn workload sử dụng.
-Không upload mật khẩu/private key vào phần cấu hình; dùng Vault cho secrets.
+Trong **Settings → Back up Portainer → Store in S3**, admin nhập bucket, region,
+prefix tùy chọn và giờ chạy hằng ngày theo UTC. Lưu cấu hình trước khi chọn
+**Backup now** để chạy ngay. UI hiển thị kết quả lần chạy gần nhất. Ví dụ,
+00:00 UTC tương ứng 07:00 tại Việt Nam. Nếu Portainer Server dừng qua giờ hẹn,
+sau khi khởi động lại, hệ thống sẽ thử một lần cho mốc đã lỡ gần nhất rồi tiếp
+tục lịch hằng ngày. Các mốc cũ hơn không được chạy bù riêng. Mỗi archive được
+upload bằng một S3 PutObject và có giới hạn kích thước 5 GiB.
+
+Portainer Server sử dụng IAM role với credentials tạm thời. Trên EC2, gắn
+instance profile và bảo đảm container truy cập được IMDSv2. Ngoài AWS, cấu hình
+IAM Roles Anywhere credential helper qua AWS profile và `credential_process`,
+đồng thời cung cấp certificate và private key cho helper trong container. Cấp
+role quyền `s3:PutObject` trên prefix đã chọn. Nếu bucket dùng SSE-KMS, cấp thêm
+quyền KMS theo cấu hình của bucket. Xem [AWS SDK for Go](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html)
+và [IAM Roles Anywhere](https://docs.aws.amazon.com/sdkref/latest/guide/access-rolesanywhere.html).
+
+Backup bao gồm database, file dữ liệu Portainer và các revision cấu hình stack
+còn được metadata tham chiếu trong `STACK_CONFIG_ROOT`. Portainer kiểm tra hash
+trước khi tạo bản backup. File cấu hình còn lưu trên đĩa sau khi stack bị xóa
+không còn metadata liên kết và cần được quản lý riêng. Dữ liệu ứng dụng trong
+volumes và bind mounts vẫn cần cơ chế backup riêng. Không upload mật khẩu hoặc
+private key vào phần cấu hình stack; dùng Vault cho secrets.
+
+Để khôi phục, tải archive từ S3 rồi chọn **Restore Portainer from backup** khi
+thiết lập Portainer mới. Mount `STACK_CONFIG_ROOT` tại đường dẫn đã cấu hình
+trước đó và đặt `PORTAINER_STACK_CONFIG_ROOT` trỏ tới mount này. Các revision đã
+có được kiểm tra hash, file xung đột sẽ khiến restore dừng trước khi thay database.
+Backup tạo bằng phiên bản cũ không chứa revision file, nên cần khôi phục riêng
+`STACK_CONFIG_ROOT` tương ứng với bản backup đó. Metadata thiếu file sẽ bị kiểm
+tra hash từ chối apply.
 
 Các field mới là bổ sung tùy chọn nên không cần migration phá hủy dữ liệu cũ.
 Không rollback binary về CE gốc trên environment đang dựa vào operation policy:

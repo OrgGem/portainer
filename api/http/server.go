@@ -157,6 +157,7 @@ func (server *Server) Start(ctx context.Context) error {
 		adminMonitor,
 	)
 	backupHandler.SetupToken = server.SetupToken
+	backupHandler.Start(ctx)
 
 	var roleHandler = roles.NewHandler(requestBouncer)
 	roleHandler.DataStore = server.DataStore

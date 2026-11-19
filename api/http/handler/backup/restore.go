@@ -1,15 +1,15 @@
 package backup
 
 import (
-	"bytes"
-	"io"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/pkg/errors"
 	operations "github.com/portainer/portainer/api/backup"
 	"github.com/portainer/portainer/api/http/security/setuptoken"
+	"github.com/portainer/portainer/api/logs"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
-	"github.com/portainer/portainer/pkg/libhttp/request"
+	"github.com/rs/zerolog/log"
 )
 
 type restorePayload struct {
@@ -32,6 +32,14 @@ type restorePayload struct {
 // @failure 500 "Server error"
 // @router /restore [post]
 func (h *Handler) restore(w http.ResponseWriter, r *http.Request) *httperror.HandlerError {
+	defer func() {
+		if r.MultipartForm != nil {
+			if err := r.MultipartForm.RemoveAll(); err != nil {
+				log.Warn().Err(err).Msg("failed to remove restore upload temporary files")
+			}
+		}
+	}()
+
 	if err := setuptoken.Validate(r, h.SetupToken); err != nil {
 		return err
 	}
@@ -45,14 +53,13 @@ func (h *Handler) restore(w http.ResponseWriter, r *http.Request) *httperror.Han
 	}
 	h.adminMonitor.Stop()
 
-	var payload restorePayload
-	err = decodeForm(r, &payload)
+	archive, password, err := decodeForm(r)
 	if err != nil {
 		return httperror.BadRequest("Invalid request payload", err)
 	}
+	defer logs.CloseAndLogErr(archive)
 
-	var archiveReader io.Reader = bytes.NewReader(payload.FileContent)
-	err = operations.RestoreArchive(archiveReader, payload.Password, h.filestorePath, h.gate, h.dataStore, h.shutdownTrigger)
+	err = operations.RestoreArchive(archive, password, h.filestorePath, h.gate, h.dataStore, h.shutdownTrigger)
 	if err != nil {
 		return httperror.InternalServerError("Failed to restore the backup", err)
 	}
@@ -60,15 +67,15 @@ func (h *Handler) restore(w http.ResponseWriter, r *http.Request) *httperror.Han
 	return nil
 }
 
-func decodeForm(r *http.Request, p *restorePayload) error {
-	content, name, err := request.RetrieveMultiPartFormFile(r, "file")
-	if err != nil {
-		return err
+func decodeForm(r *http.Request) (multipart.File, string, error) {
+	// Keep uploaded archives on disk so memory use does not scale with file size.
+	// Parsing the form first accepts the password before or after the file part.
+	if err := r.ParseMultipartForm(0); err != nil {
+		return nil, "", err
 	}
-	p.FileContent = content
-	p.FileName = name
-
-	password, _ := request.RetrieveMultiPartFormValue(r, "password", true)
-	p.Password = password
-	return nil
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		return nil, "", err
+	}
+	return file, r.FormValue("password"), nil
 }

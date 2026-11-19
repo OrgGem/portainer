@@ -10,7 +10,7 @@ import {
 import { withAgentTargetHeader } from '@/react/docker/proxy/queries/utils';
 
 import { formatMetric, MiniMetric } from './MiniMetric';
-import { Metric, MountUsage, ResourceUsage } from './types';
+import { MountUsage, ResourceUsage } from './types';
 
 export function ResourceUsagePanel({
   environment,
@@ -102,6 +102,7 @@ export function ResourceUsagePanel({
             {data.writableLayer ? (
               <MiniMetric
                 compact
+                usageOnly
                 label="Layer"
                 metric={data.writableLayer}
                 sampledAt={data.storageSampledAt || data.sampledAt}
@@ -117,6 +118,7 @@ export function ResourceUsagePanel({
                 <div className="min-w-0 flex-1">
                   <MiniMetric
                     compact
+                    usageOnly
                     label={`Vol ${data.mounts[0].target}`}
                     metric={data.mounts[0].data}
                     sampledAt={data.storageSampledAt || data.sampledAt}
@@ -244,18 +246,12 @@ function MountMetric({
 }
 
 function mountDetails(mounts: MountUsage[]) {
-  function usage(metric: Metric) {
-    return `${formatMetric(metric.used, metric.unit)} / ${metric.total === null ? 'no known quota' : formatMetric(metric.total, metric.unit)}`;
-  }
   return mounts
     .map((mount) =>
       [
         `${mount.target} (${mount.type}${mount.readOnly ? ', read-only' : ''})`,
         mount.name,
-        `Volume data: ${usage(mount.data)}`,
-        mount.data.basis,
-        mount.filesystem &&
-          `Shared filesystem: ${usage(mount.filesystem)} (not a volume quota)`,
+        `Volume data: ${formatMetric(mount.data.used, mount.data.unit)}`,
       ]
         .filter(Boolean)
         .join('\n')
