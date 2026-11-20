@@ -65,7 +65,10 @@ export function ContainerDetailsSection({
             </code>
           </DetailsTable.Row>
 
-          <EnvironmentVariablesRow variables={config.Env} />
+          <EnvironmentVariablesRow
+            variables={config.Env}
+            maskedVariables={config.Labels?.['io.portainer.vault.env']}
+          />
 
           <LabelsRow labels={config.Labels} />
 

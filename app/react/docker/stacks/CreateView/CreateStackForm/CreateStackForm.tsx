@@ -56,6 +56,7 @@ export function CreateStackForm({ environmentId, isSwarm, swarmId }: Props) {
     env: [],
     enableWebhook: false,
     registries: [],
+    vaultMappings: [],
     accessControl: defaultValues(isAdmin, user.Id),
   };
 
@@ -142,6 +143,9 @@ function buildCreateStackPayload({
           ...basePayload,
           fileContent: values.editor.fileContent,
           webhook: values.enableWebhook ? webhookId : undefined,
+          vaultMappings: values.vaultMappings?.length
+            ? { Mappings: values.vaultMappings, InjectOnDeploy: true }
+            : undefined,
         },
       };
 
@@ -168,6 +172,9 @@ function buildCreateStackPayload({
           ...basePayload,
           file: values.upload.file,
           webhook: values.enableWebhook ? webhookId : undefined,
+          vaultMappings: values.vaultMappings?.length
+            ? { Mappings: values.vaultMappings, InjectOnDeploy: true }
+            : undefined,
         },
       };
 

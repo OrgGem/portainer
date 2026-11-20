@@ -49,6 +49,11 @@ func Services(stack *portainer.Stack) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ServicesFromContent(content)
+}
+
+// ServicesFromContent returns declared services before a stack is created.
+func ServicesFromContent(content []byte) ([]string, error) {
 	var compose struct {
 		Services map[string]any `yaml:"services"`
 	}

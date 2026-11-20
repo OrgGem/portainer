@@ -637,6 +637,7 @@
       "AuthorizationURI": "",
       "ClientID": "",
       "DefaultTeamID": 0,
+      "HideInternalAuth": false,
       "KubeSecretKey": null,
       "LogoutURI": "",
       "OAuthAutoCreateUsers": false,
@@ -771,6 +772,7 @@
   ],
   "sources": null,
   "ssl": {
+    "caCertPath": "",
     "certPath": "",
     "httpEnabled": true,
     "keyPath": "",

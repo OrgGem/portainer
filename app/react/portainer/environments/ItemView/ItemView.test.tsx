@@ -176,6 +176,58 @@ describe('ItemView', () => {
       expect(detailsForm).toHaveTextContent('Test Environment');
     });
   });
+
+  it('shows Vault connection settings for a local Docker environment', async () => {
+    server.use(
+      http.get('/api/endpoints/1/vault', () =>
+        HttpResponse.json({
+          Address: '',
+          AuthMount: 'approle',
+          RoleID: '',
+          CAPEM: '',
+          HasSecretID: false,
+        })
+      )
+    );
+    const environment = createMockEnvironment({
+      Id: 1,
+      Name: 'Local Docker',
+      Type: EnvironmentType.Docker,
+      URL: 'unix:///var/run/docker.sock',
+    });
+
+    renderComponentWithEnvironment(environment);
+
+    expect(await screen.findByText('HashiCorp Vault')).toBeVisible();
+    expect(await screen.findByLabelText('Vault URL')).toBeVisible();
+  });
+
+  it('does not show Vault connection settings for remote Docker TCP', async () => {
+    const vaultRequest = vi.fn(() =>
+      HttpResponse.json({
+        Address: 'https://vault.example.com',
+        AuthMount: 'approle',
+        RoleID: 'role-id',
+        CAPEM: '',
+        HasSecretID: true,
+      })
+    );
+    server.use(http.get('/api/endpoints/1/vault', vaultRequest));
+    const environment = createMockEnvironment({
+      Id: 1,
+      Name: 'Remote Docker',
+      Type: EnvironmentType.Docker,
+      URL: 'tcp://docker.example.com:2376',
+    });
+
+    renderComponentWithEnvironment(environment);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('environment-details-form')).toBeVisible()
+    );
+    expect(screen.queryByText('HashiCorp Vault')).not.toBeInTheDocument();
+    expect(vaultRequest).not.toHaveBeenCalled();
+  });
 });
 
 function renderComponent() {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/portainer/portainer/api/internal/ssl"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 	"github.com/portainer/portainer/pkg/libhttp/response"
@@ -13,6 +14,7 @@ type sslUpdatePayload struct {
 	// SSL Certificates
 	Cert        *string
 	Key         *string
+	ClientCert  *string
 	HTTPEnabled *bool
 }
 
@@ -48,6 +50,15 @@ func (handler *Handler) sslUpdate(w http.ResponseWriter, r *http.Request) *httpe
 	if payload.Cert != nil {
 		if err := handler.SSLService.SetCertificates([]byte(*payload.Cert), []byte(*payload.Key)); err != nil {
 			return httperror.InternalServerError("Failed to save certificate", err)
+		}
+	}
+
+	if payload.ClientCert != nil {
+		if err := handler.SSLService.SetClientCertificate([]byte(*payload.ClientCert)); err != nil {
+			if errors.Is(err, ssl.ErrInvalidCertificate) {
+				return httperror.BadRequest("Invalid CA certificate", err)
+			}
+			return httperror.InternalServerError("Failed to save CA certificate", err)
 		}
 	}
 

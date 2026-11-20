@@ -29,6 +29,8 @@ type publicSettingsResponse struct {
 	OAuthLoginURI string `json:"OAuthLoginURI" example:"https://gitlab.com/oauth"`
 	// The URL used for oauth logout
 	OAuthLogoutURI string `json:"OAuthLogoutURI" example:"https://gitlab.com/oauth/logout"`
+	// Whether portainer internal auth view will be hidden
+	OAuthHideInternalAuth bool `json:"OAuthHideInternalAuth" example:"false"`
 	// The expiry of a Kubeconfig
 	KubeconfigExpiry string `example:"24h" default:"0"`
 	// Whether team sync is enabled
@@ -93,6 +95,7 @@ func generatePublicSettings(appSettings *portainer.Settings) *publicSettingsResp
 	// If OAuth authentication is on, compose the related fields from application settings
 	if publicSettings.AuthenticationMethod == portainer.AuthenticationOAuth {
 		publicSettings.OAuthLogoutURI = appSettings.OAuthSettings.LogoutURI
+		publicSettings.OAuthHideInternalAuth = appSettings.OAuthSettings.HideInternalAuth && appSettings.OAuthSettings.SSO
 		publicSettings.OAuthLoginURI = fmt.Sprintf("%s?response_type=code&client_id=%s&redirect_uri=%s&scope=%s",
 			appSettings.OAuthSettings.AuthorizationURI,
 			appSettings.OAuthSettings.ClientID,

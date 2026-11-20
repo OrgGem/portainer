@@ -123,3 +123,44 @@ func TestVaultMappingsCanRemoveStaleServicesOneAtATime(t *testing.T) {
 	h.ServeHTTP(w, operatorRequest("PUT", "/stacks/1/vault", string(body), true))
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 }
+
+func TestVaultInjectionToggleIsVersionedAndRequiresSupportedEndpoint(t *testing.T) {
+	h, store, _, endpoint := managedFixture(t)
+	call := func(method, path, payload string, status int) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, operatorRequest(method, path, payload, true))
+		require.Equal(t, status, w.Code, w.Body.String())
+		return w
+	}
+
+	w := call("PUT", "/stacks/1/vault", `{"Version":0,"InjectOnDeploy":true,"Mappings":[{"ID":"database-password","Service":"web","Variable":"DB_PASSWORD","Path":"kv/data/apps/web","Key":"password","Engine":"kv-v2"}]}`, http.StatusOK)
+	var config portainer.StackVaultMappings
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &config))
+	require.True(t, config.InjectOnDeploy)
+	require.Equal(t, 1, config.Version)
+
+	w = call("GET", "/stacks/1/vault", "", http.StatusOK)
+	var state vaultStackResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &state))
+	require.True(t, state.InjectionSupported)
+
+	// An ordinary mapping edit that omits the optional toggle preserves the
+	// existing deploy behavior.
+	w = call("PUT", "/stacks/1/vault", `{"Version":1,"Mappings":[{"ID":"database-password","Service":"web","Variable":"DB_PASSWORD","Path":"kv/data/apps/web","Key":"password","Engine":"kv-v2"}]}`, http.StatusOK)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &config))
+	require.True(t, config.InjectOnDeploy)
+
+	endpoint.Type = portainer.DockerEnvironment
+	endpoint.URL = "tcp://docker.example:2376"
+	require.NoError(t, store.Endpoint().UpdateEndpoint(endpoint.ID, endpoint))
+	w = call("GET", "/stacks/1/vault", "", http.StatusOK)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &state))
+	require.False(t, state.InjectionSupported)
+
+	// Unsupported environments must still be able to disable an existing
+	// mapping, then save reference-only changes.
+	w = call("PUT", "/stacks/1/vault", `{"Version":2,"InjectOnDeploy":true,"Mappings":[]}`, http.StatusBadRequest)
+	w = call("PUT", "/stacks/1/vault", `{"Version":2,"InjectOnDeploy":false,"Mappings":[]}`, http.StatusOK)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &config))
+	require.False(t, config.InjectOnDeploy)
+}

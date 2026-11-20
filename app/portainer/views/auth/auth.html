@@ -47,14 +47,14 @@
             </div>
 
             <!-- divider -->
-            <div class="form-group" ng-if="ctrl.state.showOAuthLogin">
+            <div class="form-group" ng-if="ctrl.state.showOAuthLogin && !ctrl.state.OAuthHideInternalAuth">
               <div class="col-sm-12" style="display: flex; align-items: center; justify-content: center">
                 <div class="striketext small text-muted" style="display: flex; align-items: center; justify-content: center; width: 90%">or</div>
               </div>
             </div>
 
             <!-- use internal auth button -->
-            <div class="form-group" ng-if="ctrl.state.showOAuthLogin && !ctrl.state.showStandardLogin">
+            <div class="form-group" ng-if="ctrl.state.showOAuthLogin && !ctrl.state.showStandardLogin && !ctrl.state.OAuthHideInternalAuth">
               <div class="col-sm-12" style="display: flex; justify-content: center">
                 <div class="btn btn-primary btn-md btn-block" style="margin-left: 2px" ng-click="ctrl.toggleStandardLogin()"> Use internal authentication </div>
               </div>

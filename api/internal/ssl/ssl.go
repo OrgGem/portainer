@@ -3,16 +3,22 @@ package ssl
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"os"
 	"time"
 
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/dataservices"
+	"github.com/portainer/portainer/api/filesystem"
 	"github.com/portainer/portainer/pkg/libcrypto"
+	helmsdk "github.com/portainer/portainer/pkg/libhelm/sdk"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
+
+// ErrInvalidCertificate is returned when an uploaded CA certificate cannot be parsed as PEM X.509.
+var ErrInvalidCertificate = errors.New("invalid CA certificate")
 
 // Service represents a service to manage SSL certificates
 type Service struct {
@@ -33,6 +39,8 @@ func NewService(fileService portainer.FileService, dataStore dataservices.DataSt
 
 // Init initializes the service
 func (service *Service) Init(host, certPath, keyPath string) error {
+	service.loadClientCertificate()
+
 	certSupplied := certPath != "" && keyPath != ""
 	if certSupplied {
 		newCertPath, newKeyPath, err := service.fileService.CopySSLCertPair(certPath, keyPath)
@@ -113,6 +121,54 @@ func (service *Service) SetCertificates(certData, keyData []byte) error {
 	service.shutdownTrigger()
 
 	return nil
+}
+
+// SetClientCertificate validates and stores the additional CA certificate file
+// used for HTTPS connections to Helm repositories.
+func (service *Service) SetClientCertificate(clientCertData []byte) error {
+	if len(clientCertData) == 0 {
+		return ErrInvalidCertificate
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(clientCertData) {
+		return ErrInvalidCertificate
+	}
+
+	caCertPath, err := service.fileService.StoreSSLCACert(clientCertData)
+	if err != nil {
+		return err
+	}
+
+	settings, err := service.dataStore.SSLSettings().Settings()
+	if err != nil {
+		return err
+	}
+
+	settings.CACertPath = caCertPath
+
+	if err := service.dataStore.SSLSettings().UpdateSettings(settings); err != nil {
+		return err
+	}
+
+	helmsdk.SetCAFile(caCertPath)
+
+	return nil
+}
+
+func (service *Service) loadClientCertificate() {
+	settings, err := service.GetSSLSettings()
+	if err != nil || settings.CACertPath == "" {
+		return
+	}
+
+	exists, err := filesystem.FileExists(settings.CACertPath)
+	if err != nil || !exists {
+		log.Warn().Str("ca_cert_path", settings.CACertPath).Msg("configured Helm CA certificate file not found on disk")
+		return
+	}
+
+	helmsdk.SetCAFile(settings.CACertPath)
 }
 
 func (service *Service) SetHTTPEnabled(httpEnabled bool) error {

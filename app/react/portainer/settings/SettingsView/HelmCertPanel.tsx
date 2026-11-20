@@ -13,9 +13,6 @@ import {
   withFileExtension,
 } from '@@/form-components/yup-file-validation';
 import { FormActions } from '@@/form-components/FormActions';
-import { BEOverlay } from '@@/BEFeatureIndicator/BEOverlay';
-
-import { FeatureId } from '../../feature-flags/enums';
 
 import { useUpdateSSLConfigMutation } from './useUpdateSSLConfigMutation';
 
@@ -30,24 +27,22 @@ export function HelmCertPanel() {
   };
 
   return (
-    <BEOverlay featureId={FeatureId.CA_FILE} variant="widget">
-      <Widget>
-        <Widget.Title
-          icon={Key}
-          title="Certificate Authority file for Kubernetes Helm repositories"
-        />
-        <Widget.Body>
-          <Formik
-            initialValues={initialValues}
-            validationSchema={validation}
-            onSubmit={handleSubmit}
-            validateOnMount
-          >
-            <InnerForm isLoading={mutation.isLoading} />
-          </Formik>
-        </Widget.Body>
-      </Widget>
-    </BEOverlay>
+    <Widget>
+      <Widget.Title
+        icon={Key}
+        title="Certificate Authority file for Kubernetes Helm repositories"
+      />
+      <Widget.Body>
+        <Formik
+          initialValues={initialValues}
+          validationSchema={validation}
+          onSubmit={handleSubmit}
+          validateOnMount
+        >
+          <InnerForm isLoading={mutation.isLoading} />
+        </Formik>
+      </Widget.Body>
+    </Widget>
   );
 
   function handleSubmit({ clientCertFile }: FormValues) {

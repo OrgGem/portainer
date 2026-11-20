@@ -126,15 +126,24 @@ func locateChart(opts *action.ChartPathOptions, registryClient *registry.Client,
 }
 
 func chartTransport(opts *action.ChartPathOptions) (*http.Transport, error) {
-	if opts.CertFile == "" && opts.KeyFile == "" && opts.CaFile == "" && !opts.InsecureSkipTLSVerify {
+	caFile := opts.CaFile
+	if caFile == "" {
+		caFile = GetCAFile()
+	}
+
+	if opts.CertFile == "" && opts.KeyFile == "" && caFile == "" && !opts.InsecureSkipTLSVerify {
 		return ssrf.NewTransport(nil), nil
+	}
+
+	if opts.CertFile == "" && opts.KeyFile == "" && !opts.InsecureSkipTLSVerify {
+		return newTransportWithAdditionalCA(caFile)
 	}
 
 	tlsConfig, err := crypto.CreateTLSConfigurationFromDisk(portainer.TLSConfiguration{
 		TLS:           true,
 		TLSCertPath:   opts.CertFile,
 		TLSKeyPath:    opts.KeyFile,
-		TLSCACertPath: opts.CaFile,
+		TLSCACertPath: caFile,
 		TLSSkipVerify: opts.InsecureSkipTLSVerify,
 	})
 	if err != nil {

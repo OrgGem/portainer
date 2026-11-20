@@ -4,6 +4,9 @@ import { AccessControlForm } from '@/react/portainer/access-control/AccessContro
 import { NameField } from '@/react/docker/stacks/common/NameField';
 import { useDockerComposeSchema } from '@/react/hooks/useDockerComposeSchema/useDockerComposeSchema';
 import { useCurrentEnvironment } from '@/react/hooks/useCurrentEnvironment';
+import { useIsEnvironmentAdmin } from '@/react/hooks/useUser';
+import { EnvironmentType } from '@/react/portainer/environments/types';
+import { isLocalDockerEnvironment } from '@/react/portainer/environments/utils';
 
 import { BoxSelector } from '@@/BoxSelector';
 import { LoadingButton } from '@@/buttons';
@@ -24,6 +27,7 @@ import { GitSection } from './GitSection/GitSection';
 import { TemplateSection } from './TemplateSection/TemplateSection';
 import { DeploymentInfo } from './DeploymentInfo';
 import { FormValues } from './types';
+import { NewStackVaultMappings } from './NewStackVaultMappings';
 
 const buildMethods = [editor, upload, git, customTemplate];
 
@@ -39,6 +43,7 @@ export function CreateStackInnerForm({
   webhookId: string;
 }) {
   const environmentQuery = useCurrentEnvironment();
+  const { authorized: canEditVault } = useIsEnvironmentAdmin();
   const schemaQuery = useDockerComposeSchema();
   const formikContext = useFormikContext<FormValues>();
   const { errors, values, setFieldValue, isValid } = formikContext;
@@ -113,6 +118,15 @@ export function CreateStackInnerForm({
         onChange={(env) => setFieldValue('env', env)}
         errors={errors.env}
       />
+
+      {!isSwarm &&
+        canEditVault &&
+        (values.method === 'editor' || values.method === 'upload') &&
+        (environment.Type === EnvironmentType.AgentOnDocker ||
+          (environment.Type === EnvironmentType.Docker &&
+            isLocalDockerEnvironment(environment.URL))) && (
+          <NewStackVaultMappings />
+        )}
 
       <AccessControlForm
         values={values.accessControl}

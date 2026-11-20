@@ -68,6 +68,7 @@ func (manager *ComposeStackManager) Up(ctx context.Context, stack *portainer.Sta
 	if err = manager.deployer.Deploy(ctx, filePaths, libstack.DeployOptions{
 		ConfigOnly:    options.ConfigOnly,
 		ServiceImages: options.ServiceImages,
+		VaultEnv:      options.VaultEnv,
 		Options: libstack.Options{
 			WorkingDir:  stack.ProjectPath,
 			EnvFilePath: envFilePath,

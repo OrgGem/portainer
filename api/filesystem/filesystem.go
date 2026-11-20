@@ -878,6 +878,17 @@ func (service *Service) StoreSSLCertPair(cert, key []byte) (string, string, erro
 	return service.wrapFileStore(certPath), service.wrapFileStore(keyPath), nil
 }
 
+// StoreSSLCACert stores an additional SSL CA certificate file
+func (service *Service) StoreSSLCACert(caCert []byte) (string, error) {
+	caCertPath := JoinPaths(SSLCertPath, SSLCACertFilename)
+
+	if err := service.createFileInStore(caCertPath, bytes.NewReader(caCert)); err != nil {
+		return "", err
+	}
+
+	return service.wrapFileStore(caCertPath), nil
+}
+
 // CopySSLCertPair copies a ssl certificate pair
 func (service *Service) CopySSLCertPair(certPath, keyPath string) (string, string, error) {
 	defCertPath, defKeyPath := service.GetDefaultSSLCertsPath()

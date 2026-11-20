@@ -1,12 +1,21 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import axios, { parseAxiosError } from '@/portainer/services/axios/axios';
-import { mutationOptions, withError } from '@/react-tools/react-query';
+import {
+  mutationOptions,
+  withError,
+  withInvalidate,
+} from '@/react-tools/react-query';
 
 export function useUpdateSSLConfigMutation() {
+  const queryClient = useQueryClient();
+
   return useMutation(
     updateSSLConfig,
-    mutationOptions(withError('Unable to update SSL configuration'))
+    mutationOptions(
+      withError('Unable to update SSL configuration'),
+      withInvalidate(queryClient, [['sslSettings']])
+    )
   );
 }
 

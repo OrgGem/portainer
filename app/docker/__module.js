@@ -17,7 +17,7 @@ angular.module('portainer.docker', ['portainer.app', reactModule]).config([
       parent: 'endpoint',
       url: '/docker',
       abstract: true,
-      onEnter: /* @ngInject */ function onEnter(endpoint, $async, $state, EndpointService, Notifications, StateManager, SystemService, EndpointProvider) {
+      onEnter: /* @ngInject */ function onEnter(endpoint, $async, $state, EndpointService, Notifications, StateManager, SystemService, EndpointProvider, Authentication) {
         return $async(async () => {
           const dockerTypes = [PortainerEndpointTypes.DockerEnvironment, PortainerEndpointTypes.AgentOnDockerEnvironment, PortainerEndpointTypes.EdgeAgentOnDockerEnvironment];
 
@@ -29,7 +29,7 @@ angular.module('portainer.docker', ['portainer.app', reactModule]).config([
           try {
             const { status, error } = await checkEndpointStatus(endpoint);
 
-            if (endpoint.Type !== PortainerEndpointTypes.EdgeAgentOnDockerEnvironment) {
+            if (endpoint.Type !== PortainerEndpointTypes.EdgeAgentOnDockerEnvironment && Authentication.isPureAdmin()) {
               await updateEndpointStatus(endpoint, status);
             }
             endpoint.Status = status;

@@ -22,11 +22,21 @@ test('shows the enforced defaults and saves a shared policy through settings', a
   const Panel = withTestQueryProvider(BuildPolicyPanel);
   render(<Panel />);
   expect(screen.getByLabelText('CPU limit (%)')).toHaveValue(50);
+  const legacyBuildSwitch = screen.getByLabelText('Use legacy Compose build');
+  const hostNetworkSwitch = screen.getByLabelText(
+    'Allow host networking for managed builds'
+  );
   const cgroupSwitch = screen.getByLabelText(
     'Automatically configure private cgroup for builder'
   );
+  expect(legacyBuildSwitch).not.toBeChecked();
+  expect(hostNetworkSwitch).not.toBeChecked();
   expect(cgroupSwitch).not.toBeChecked();
+  fireEvent.click(legacyBuildSwitch);
+  fireEvent.click(hostNetworkSwitch);
   fireEvent.click(cgroupSwitch);
+  await waitFor(() => expect(legacyBuildSwitch).toBeChecked());
+  await waitFor(() => expect(hostNetworkSwitch).toBeChecked());
   await waitFor(() => expect(cgroupSwitch).toBeChecked());
   expect(screen.getByLabelText('Memory limit (%)')).toHaveValue(50);
   expect(screen.getByLabelText('Concurrent builds per host')).toHaveValue(1);
@@ -47,6 +57,8 @@ test('shows the enforced defaults and saves a shared policy through settings', a
           MemoryPercent: 50,
           MaxConcurrentBuilds: 1,
           AutoConfigureBuilderCgroup: true,
+          AllowHostNetwork: true,
+          UseLegacyBuild: true,
         },
       },
     ])
@@ -76,12 +88,18 @@ test('loads persisted policy values', () => {
         MemoryPercent: 30,
         MaxConcurrentBuilds: 2,
         AutoConfigureBuilderCgroup: true,
+        AllowHostNetwork: true,
+        UseLegacyBuild: true,
       }}
     />
   );
   expect(screen.getByLabelText('CPU limit (%)')).toHaveValue(20);
   expect(screen.getByLabelText('Memory limit (%)')).toHaveValue(30);
   expect(screen.getByLabelText('Concurrent builds per host')).toHaveValue(2);
+  expect(screen.getByLabelText('Use legacy Compose build')).toBeChecked();
+  expect(
+    screen.getByLabelText('Allow host networking for managed builds')
+  ).toBeChecked();
   expect(
     screen.getByLabelText('Automatically configure private cgroup for builder')
   ).toBeChecked();

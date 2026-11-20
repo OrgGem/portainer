@@ -17,10 +17,14 @@ export const defaultBuildPolicy: ComposeBuildPolicy = {
   MemoryPercent: 50,
   MaxConcurrentBuilds: 1,
   AutoConfigureBuilderCgroup: false,
+  AllowHostNetwork: false,
+  UseLegacyBuild: false,
 };
 
 export const buildPolicyValidation: SchemaOf<ComposeBuildPolicy> = object({
   AutoConfigureBuilderCgroup: boolean().required(),
+  AllowHostNetwork: boolean().required(),
+  UseLegacyBuild: boolean().required(),
   CPUPercent: number()
     .integer()
     .min(1)
@@ -48,7 +52,7 @@ export function BuildPolicyPanel({ policy }: { policy?: ComposeBuildPolicy }) {
       <Widget.Title icon={Cpu} title="Compose build policy" />
       <Widget.Body>
         <p>
-          All Compose builds managed by this Portainer server share one CPU and
+          Managed Compose builds on this Portainer server share one CPU and
           memory budget per Linux Docker host, including environments connected
           to the same host. Individual stacks cannot exceed this policy. Swap is
           disabled for the builder.
@@ -76,6 +80,37 @@ export function BuildPolicyPanel({ policy }: { policy?: ComposeBuildPolicy }) {
         >
           {({ errors, touched, isValid, dirty, values, setFieldValue }) => (
             <Form className="form-horizontal">
+              <SwitchField
+                label="Use legacy Compose build"
+                name="UseLegacyBuild"
+                data-cy="build-legacy-switch"
+                checked={values.UseLegacyBuild}
+                onChange={(value) => setFieldValue('UseLegacyBuild', value)}
+              />
+              <p>
+                Uses the Docker endpoint&apos;s default Compose builder, as in
+                Portainer Standalone. The managed CPU and memory limits, build
+                queue, and host-network setting below do not apply. Existing
+                managed builds finish with their original settings. Services
+                built in this deployment use their freshly built images without
+                pulling again, regardless of their pull policy.
+              </p>
+              <SwitchField
+                label="Allow host networking for managed builds"
+                name="AllowHostNetwork"
+                data-cy="build-host-network-switch"
+                checked={values.AllowHostNetwork}
+                onChange={(value) => setFieldValue('AllowHostNetwork', value)}
+              />
+              <p>
+                Allows a stack to request host networking with{' '}
+                <code>build.network: host</code> or the{' '}
+                <code>network.host</code> build entitlement. The build can then
+                reach services on the Docker host&apos;s loopback address. Other
+                builds use an isolated network. Host networking for a running
+                service is configured separately. Builds using different network
+                modes wait for each other when switching the builder.
+              </p>
               <FormControl
                 label="CPU limit (%)"
                 inputId="build-cpu-percent"

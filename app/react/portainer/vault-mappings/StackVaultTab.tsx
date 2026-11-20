@@ -16,15 +16,7 @@ import {
   VaultMapping,
   vaultQueryKey,
 } from './types';
-
-const emptyMapping: VaultMapping = {
-  ID: '',
-  Service: '',
-  Variable: '',
-  Path: '',
-  Key: '',
-  Engine: 'kv-v2',
-};
+import { emptyVaultMapping, VaultMappingFields } from './VaultMappingFields';
 
 export function StackVaultTab({ stack }: { stack: Stack }) {
   const client = useQueryClient();
@@ -34,32 +26,41 @@ export function StackVaultTab({ stack }: { stack: Stack }) {
       (await axios.get<StackVaultResponse>(`/stacks/${stack.Id}/vault`)).data,
     refetchOnWindowFocus: false,
   });
-  const [draft, setDraft] = useState<VaultMapping>(emptyMapping);
+  const [draft, setDraft] = useState<VaultMapping>(emptyVaultMapping);
   const [service, setService] = useState('');
   const [exported, setExported] = useState<{
     Content: string;
     Version: number;
   }>();
   const mutation = useMutation({
-    mutationFn: async (Mappings: VaultMapping[]) => {
+    mutationFn: async ({
+      Mappings,
+      InjectOnDeploy,
+    }: {
+      Mappings: VaultMapping[];
+      InjectOnDeploy?: boolean;
+    }) => {
       if (!query.data) throw new Error('Reload mappings before saving');
       try {
         return (
           await axios.put<VaultConfiguration>(`/stacks/${stack.Id}/vault`, {
             Version: query.data.Configuration.Version,
             Mappings,
+            ...(InjectOnDeploy === undefined ? {} : { InjectOnDeploy }),
           })
         ).data;
       } catch (error) {
         throw parseAxiosError(error, 'Unable to save Vault references');
       }
     },
-    onSuccess: async () => {
-      setDraft(emptyMapping);
+    onSuccess: async (_, variables) => {
+      if (variables.InjectOnDeploy === undefined) {
+        setDraft(emptyVaultMapping);
+      }
       setExported(undefined);
       notifySuccess(
         'Success',
-        'Vault references saved. Runtime deployment is separate.'
+        'Vault mappings saved. Deploy the stack to apply the changes.'
       );
       await Promise.all([
         client.invalidateQueries(vaultQueryKey(stack.Id)),
@@ -101,14 +102,11 @@ export function StackVaultTab({ stack }: { stack: Stack }) {
     <div className="space-y-5">
       <h3>Vault mappings</h3>
       <p>
-        References only: environment variable → Vault API path → key. Portainer
-        does not retrieve, store or display secret values or Vault credentials.
+        Map an environment variable for a service to a Vault API path and key.
       </p>
       <p>
-        <strong>Saved configuration, runtime not verified.</strong> Saving here
-        does not change running containers. Export the service template, merge
-        it into the application&apos;s Vault Agent configuration and deploy
-        through your normal release process.
+        Saving mappings does not change running containers. When deployment
+        injection is enabled, Portainer reads Vault when the stack is deployed.
       </p>
       <div className="flex items-center gap-3">
         <span>
@@ -136,6 +134,37 @@ export function StackVaultTab({ stack }: { stack: Stack }) {
         </p>
       )}
       {query.data.Unavailable && <p role="alert">{query.data.Unavailable}</p>}
+      {query.data.InjectionSupported === false && (
+        <p role="alert">
+          Deployment injection requires local Docker or a standard Docker Agent.
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <span>
+          Vault injection at deploy:{' '}
+          <strong>{config.InjectOnDeploy ? 'enabled' : 'disabled'}</strong>
+        </span>
+        {canEdit && (
+          <Button
+            data-cy="toggle-vault-injection"
+            disabled={
+              mutation.isLoading ||
+              (query.data.InjectionSupported === false &&
+                !config.InjectOnDeploy)
+            }
+            onClick={() =>
+              mutation.mutate({
+                Mappings: config.Mappings,
+                InjectOnDeploy: !config.InjectOnDeploy,
+              })
+            }
+          >
+            {config.InjectOnDeploy
+              ? 'Disable deployment injection'
+              : 'Enable deployment injection'}
+          </Button>
+        )}
+      </div>
       {mutation.isError && (
         <p role="alert">
           {(mutation.error as Error).message} Your form has been kept. Reload
@@ -197,9 +226,11 @@ export function StackVaultTab({ stack }: { stack: Stack }) {
                       color="dangerlight"
                       disabled={mutation.isLoading}
                       onClick={() =>
-                        mutation.mutate(
-                          config.Mappings.filter((item) => item.ID !== entry.ID)
-                        )
+                        mutation.mutate({
+                          Mappings: config.Mappings.filter(
+                            (item) => item.ID !== entry.ID
+                          ),
+                        })
                       }
                     >
                       Remove reference
@@ -221,74 +252,12 @@ export function StackVaultTab({ stack }: { stack: Stack }) {
       {canEdit && (
         <form onSubmit={save} className="space-y-3">
           <h4>{draft.ID ? 'Edit mapping' : 'Add mapping'}</h4>
-          <label htmlFor="vault-service">Service</label>
-          <select
-            id="vault-service"
-            className="form-control"
-            required
-            value={draft.Service}
-            onChange={(e) => setDraft({ ...draft, Service: e.target.value })}
-          >
-            <option value="">Select a service</option>
-            {services.map((name) => (
-              <option key={name}>{name}</option>
-            ))}
-          </select>
-          <label htmlFor="vault-variable">Environment variable</label>
-          <input
-            id="vault-variable"
-            className="form-control"
-            required
-            maxLength={128}
-            pattern="[a-zA-Z_][a-zA-Z0-9_]*"
-            placeholder="DB_PASSWORD"
-            value={draft.Variable}
-            onChange={(e) => setDraft({ ...draft, Variable: e.target.value })}
+          <VaultMappingFields
+            mapping={draft}
+            onChange={setDraft}
+            services={services}
+            idPrefix="vault"
           />
-          <label htmlFor="vault-engine">KV engine</label>
-          <select
-            id="vault-engine"
-            className="form-control"
-            value={draft.Engine}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                Engine: e.target.value as VaultMapping['Engine'],
-              })
-            }
-          >
-            <option value="kv-v2">KV v2</option>
-            <option value="kv-v1">KV v1</option>
-          </select>
-          <label htmlFor="vault-path">Vault API path</label>
-          <input
-            id="vault-path"
-            className="form-control"
-            required
-            maxLength={512}
-            placeholder="kv/data/apps/backend"
-            value={draft.Path}
-            onChange={(e) => setDraft({ ...draft, Path: e.target.value })}
-          />
-          <p>
-            For KV v2, include /data/ after the mount. Use the API path, without
-            a URL, token or secret value.
-          </p>
-          <label htmlFor="vault-key">Vault key name</label>
-          <input
-            id="vault-key"
-            className="form-control"
-            required
-            maxLength={128}
-            pattern="[a-zA-Z_][a-zA-Z0-9_]*"
-            placeholder="password"
-            value={draft.Key}
-            onChange={(e) => setDraft({ ...draft, Key: e.target.value })}
-          />
-          <p>
-            Key names support letters, digits and underscores, starting with a
-            letter or underscore.
-          </p>
           <Button
             type="submit"
             data-cy="save-vault-mapping"
@@ -300,7 +269,7 @@ export function StackVaultTab({ stack }: { stack: Stack }) {
             <Button
               data-cy="cancel-vault-edit"
               disabled={mutation.isLoading}
-              onClick={() => setDraft(emptyMapping)}
+              onClick={() => setDraft(emptyVaultMapping)}
             >
               Cancel edit
             </Button>
@@ -376,6 +345,6 @@ export function StackVaultTab({ stack }: { stack: Stack }) {
     const others = query.data.Configuration.Mappings.filter(
       (entry) => !draft.ID || entry.ID !== draft.ID
     );
-    mutation.mutate([...others, draft]);
+    mutation.mutate({ Mappings: [...others, draft] });
   }
 }

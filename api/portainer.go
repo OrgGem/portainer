@@ -985,6 +985,7 @@ type (
 		OAuthAutoCreateUsers bool             `json:"OAuthAutoCreateUsers"`
 		DefaultTeamID        TeamID           `json:"DefaultTeamID"`
 		SSO                  bool             `json:"SSO"`
+		HideInternalAuth     bool             `json:"HideInternalAuth"`
 		LogoutURI            string           `json:"LogoutURI"`
 		KubeSecretKey        []byte           `json:"KubeSecretKey"`
 		AuthStyle            oauth2.AuthStyle `json:"AuthStyle"`
@@ -1270,6 +1271,7 @@ type (
 	SSLSettings struct {
 		CertPath    string `json:"certPath"`
 		KeyPath     string `json:"keyPath"`
+		CACertPath  string `json:"caCertPath"`
 		SelfSigned  bool   `json:"selfSigned"`
 		HTTPEnabled bool   `json:"httpEnabled"`
 	}
@@ -1732,6 +1734,8 @@ type (
 
 	ComposeUpOptions struct {
 		ComposeOptions
+		// VaultEnv contains values resolved for this operation only, by service.
+		VaultEnv map[string]map[string]string
 		// ConfigOnly recreates only selected services using their running image IDs.
 		ConfigOnly    bool
 		ServiceImages map[string]string
@@ -1838,6 +1842,7 @@ type (
 		GetDatastorePath() string
 		GetDefaultSSLCertsPath() (string, string)
 		StoreSSLCertPair(cert, key []byte) (string, string, error)
+		StoreSSLCACert(caCert []byte) (string, error)
 		CopySSLCertPair(certPath, keyPath string) (string, string, error)
 		CopySSLCACert(caCertPath string) (string, error)
 		StoreMTLSCertificates(caCert, cert, key []byte) (string, string, string, error)

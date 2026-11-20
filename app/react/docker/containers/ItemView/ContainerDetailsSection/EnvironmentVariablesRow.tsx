@@ -2,10 +2,12 @@ import { DetailsTable } from '@@/DetailsTable';
 
 interface EnvironmentVariablesRowProps {
   variables: Array<string> | undefined;
+  maskedVariables?: string;
 }
 
 export function EnvironmentVariablesRow({
   variables,
+  maskedVariables,
 }: EnvironmentVariablesRowProps) {
   if (!variables || variables?.length === 0) {
     return null;
@@ -13,6 +15,9 @@ export function EnvironmentVariablesRow({
 
   const sortedEnv = [...variables].sort((a, b) =>
     a.toLowerCase().localeCompare(b.toLowerCase())
+  );
+  const maskedNames = new Set(
+    (maskedVariables || '').split(',').map((name) => name.trim())
   );
 
   return (
@@ -24,7 +29,7 @@ export function EnvironmentVariablesRow({
             return (
               <tr key={index}>
                 <td>{key}</td>
-                <td>{value}</td>
+                <td>{maskedNames.has(key) ? '••••••' : value}</td>
               </tr>
             );
           })}

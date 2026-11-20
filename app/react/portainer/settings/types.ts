@@ -6,6 +6,8 @@ export interface ComposeBuildPolicy {
   MemoryPercent: number;
   MaxConcurrentBuilds: number;
   AutoConfigureBuilderCgroup: boolean;
+  AllowHostNetwork: boolean;
+  UseLegacyBuild: boolean;
 }
 
 export interface TLSConfiguration {
@@ -57,6 +59,7 @@ export interface OAuthSettings {
   OAuthAutoCreateUsers: boolean;
   DefaultTeamID: TeamId;
   SSO: boolean;
+  HideInternalAuth: boolean;
   LogoutURI: string;
   KubeSecretKey: string;
 }

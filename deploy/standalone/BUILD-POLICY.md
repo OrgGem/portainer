@@ -1,6 +1,6 @@
 # Shared Compose build policy
 
-The custom CE server enforces a shared build budget on each supported Linux Docker daemon.
+By default, the custom CE server enforces a shared build budget on each supported Linux Docker daemon.
 Existing databases automatically receive the effective defaults; no migration or
 per-stack Compose YAML change is required.
 
@@ -14,8 +14,10 @@ Open **Settings → Compose build policy** as a global administrator.
 | Memory percentage of total host RAM | 50 | Integer 1–50 |
 | Concurrent build jobs per host | 1 | Integer 1–8 |
 | Automatically configure private cgroup for builder | Off | Boolean |
+| Allow host networking for managed builds | Off | Boolean |
+| Use legacy Compose build | Off | Boolean |
 
-All concurrent jobs share the same CPU/RAM budget. They do not each receive a
+All concurrent managed jobs share the same CPU/RAM budget. They do not each receive a
 separate budget. Memory swap is disabled. There is no per-stack override or
 unlimited fallback. For a 16-CPU, 32-GiB Docker host, defaults give a shared budget
 of eight CPU equivalents and at most 16 GiB RAM. CPU is a CFS time quota over a
@@ -29,25 +31,81 @@ The administrator API is `GET /api/settings` and `PUT /api/settings`:
     "CPUPercent": 50,
     "MemoryPercent": 50,
     "MaxConcurrentBuilds": 1,
-    "AutoConfigureBuilderCgroup": false
+    "AutoConfigureBuilderCgroup": false,
+    "AllowHostNetwork": false,
+    "UseLegacyBuild": false
   }
 }
 ```
 
 Partial updates to unrelated settings preserve this policy. Within the policy,
-all three numeric fields are required. The optional boolean defaults to false
-when omitted, including in older databases. Values above 50%, fractional values, zero values
-and concurrency outside 1–8 are rejected. Changes apply to waiting/new work
-after existing host builds drain; existing builds retain their previous budget,
+all three numeric fields are required. The booleans default to false when omitted,
+including in older databases. Values above 50%, fractional values, zero values
+and concurrency outside 1–8 are rejected. Managed settings apply to waiting/new
+managed work after existing host builds drain. Running builds retain their budget,
 which is itself capped at 50%. Configuring more slots increases contention
 within the same budget and can cause individual builds to run out of memory.
+
+### Host networking during managed builds
+
+Turn on **Allow host networking for managed builds** to allow stacks to request
+access to the Docker endpoint host's network. In the Compose file, use
+`build.network` for all Dockerfile `RUN` steps in the service:
+
+```yaml
+services:
+  app:
+    build:
+      context: .
+      network: host
+```
+
+To opt in only specific Dockerfile steps, leave `build.network` at its default,
+add `build.entitlements: [network.host]`, and use `RUN --network=host` on those
+steps. Runtime `network_mode` is configured separately. Host networking reaches
+the Docker endpoint host, including its loopback services. On Docker Desktop,
+that host is the Linux VM.
+
+When a selected service requests host networking, Portainer configures the
+managed builder on the host network and BuildKit creates an OCI bridge for
+default build steps. Only explicitly requested host-network steps use the host
+network. The switch does not enable privileged builds or other entitlements.
+The managed CPU, memory and queue limits still apply. Host-network builds and
+ordinary builds wait for each other before Portainer switches the idle builder's
+network mode. The named BuildKit cache volume is preserved.
+
+BuildKit 0.25.1 uses the host interface `buildkit0` and subnet `10.10.0.0/16`
+for its OCI bridge. Before enabling this mode, Portainer inspects the endpoint
+host's interfaces and IPv4 routes in a temporary container using the pinned
+BuildKit image. If `buildkit0` already exists or a host route overlaps that
+subnet, the build fails before the bridge is created. Resolve the conflicting
+host configuration or use legacy Compose build with a suitable Docker builder.
+Another process could create a conflicting network after this check. BuildKit
+manages its bridge and associated firewall rules on the endpoint host.
+
+### Legacy Compose build
+
+Turn on **Use legacy Compose build** to use the Docker endpoint's selected
+Compose builder, as in Portainer Standalone. This mode does
+not apply the managed CPU and memory budget, queue, private-cgroup requirement,
+or managed host-network switch. Host networking is subject to the selected
+builder's own configuration. Managed settings remain saved for later use.
+Running managed builds finish with their existing settings.
+New legacy builds can run while those managed builds are still active.
+For each service built during a deployment, Portainer retains the original image
+tags and starts the service with that job's immutable image ID. It does not pull
+that built service again during the same deployment, regardless of the service's
+pull policy. The Compose file remains unchanged and its pull policy applies to
+later operations. This also prevents concurrent deployments sharing a mutable
+tag from selecting each other's built image.
 
 ## Execution and scope
 
 ### Docker Agent prerequisite
 
-Local socket environments need only the custom server image. Agent environments
-also need `portainer-agent-custom:2.45.3-build-policy`, built with:
+Managed builds through a local socket need only the custom server image. Managed
+builds through an Agent also need `portainer-agent-custom:2.45.3-build-policy`,
+built with:
 
 ```sh
 docker build -f deploy/standalone/agent/Dockerfile -t portainer-agent-custom:2.45.3-build-policy .
@@ -62,6 +120,7 @@ final image keeps the original Agent image's helpers/configuration and replaces
 only the Agent executable. This is related to the upstream
 [Agent BuildKit transport issue](https://github.com/portainer/portainer/issues/13255).
 The server does not bypass limits when used with an incompatible Agent.
+Legacy builds use the selected Docker builder's transport and requirements.
 
 ### Managed execution
 
@@ -120,8 +179,9 @@ The server does not bypass limits when used with an incompatible Agent.
   and build failures release the slot. A memory-exhausted build can fail; it does
   not automatically retry without limits. On server restart, the first job stops
   a previously running managed builder to cancel orphaned work before reusing it.
-- BuildKit uses a privileged infrastructure container. Compose build requests
-  cannot request privileged mode or additional entitlements. The configured
+- BuildKit uses a privileged infrastructure container. Managed Compose build
+  requests cannot request privileged mode or entitlements other than an
+  administratively enabled `network.host`. The configured
   limits assume trusted host administrators; direct Docker administrator access
   can change/remove the infrastructure container outside Portainer's control.
 

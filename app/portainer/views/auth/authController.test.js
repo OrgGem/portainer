@@ -25,9 +25,17 @@ vi.mock('@/portainer/services/http-request.helper', () => ({
   dispatchCacheRefreshEvent: vi.fn(),
 }));
 
-function buildController({ userDetails = {}, isAdmin = false, routes = {} } = {}) {
+function buildController({
+  userDetails = {},
+  isAdmin = false,
+  routes = {},
+  publicSettings = {},
+  stateParams = {},
+  isAuthenticated = false,
+  logoutReason = '',
+} = {}) {
   const $state = { go: vi.fn(), current: { name: 'portainer.auth' } };
-  const $window = { location: { href: AUTH_URL } };
+  const $window = { location: { href: AUTH_URL, search: '' } };
   // stands in for ui-router: unknown paths fall to the `otherwise` rule (type RAW)
   const $urlService = {
     match: ({ path }) => (routes[path] ? { rule: { type: 'STATE', state: { name: routes[path] } } } : { rule: { type: 'RAW' } }),
@@ -39,19 +47,24 @@ function buildController({ userDetails = {}, isAdmin = false, routes = {} } = {}
     vi.fn(),
     {},
     $state,
-    {},
+    stateParams,
     $window,
     $urlService,
     {
       getUserDetails: () => ({ ID: 7, ...userDetails }),
       isAdmin: () => isAdmin,
+      isAuthenticated: () => isAuthenticated,
     },
-    {},
+    { administratorExists: vi.fn(() => Promise.resolve(true)) },
     { initialize: vi.fn(), getState: () => ({ application: { logo: '' } }) },
     { error: vi.fn() },
-    {},
-    {},
-    {},
+    { publicSettings: vi.fn(() => Promise.resolve(publicSettings)) },
+    { getParameter: vi.fn(() => null) },
+    {
+      storeLoginStateUUID: vi.fn(),
+      getLogoutReason: vi.fn(() => logoutReason),
+      cleanLogoutReason: vi.fn(),
+    },
     {}
   );
 
@@ -148,5 +161,58 @@ describe('postLoginSteps', () => {
 
     expect($state.go).toHaveBeenCalledWith('portainer.wizard');
     expect($window.location.href).toBe(AUTH_URL);
+  });
+});
+
+describe('OAuthHideInternalAuth', () => {
+  it('redirects automatically to OAuthLoginURI when OAuth and OAuthHideInternalAuth are enabled', async () => {
+    const { controller, $window } = buildController({
+      publicSettings: {
+        AuthenticationMethod: 3,
+        OAuthLoginURI: 'https://idp.example.com/oauth/authorize?client_id=abc',
+        OAuthHideInternalAuth: true,
+      },
+    });
+
+    await controller.onInit();
+
+    expect(controller.state.OAuthHideInternalAuth).toBe(true);
+    expect(controller.state.showStandardLogin).toBe(false);
+    expect($window.location.href).toMatch(/^https:\/\/idp\.example\.com\/oauth\/authorize\?client_id=abc&state=/);
+  });
+
+  it('does not auto-redirect when reload param is set (after logout) and blocks toggling internal login', async () => {
+    const { controller, $window } = buildController({
+      stateParams: { reload: true },
+      publicSettings: {
+        AuthenticationMethod: 3,
+        OAuthLoginURI: 'https://idp.example.com/oauth/authorize?client_id=abc',
+        OAuthHideInternalAuth: true,
+      },
+    });
+
+    await controller.onInit();
+
+    expect($window.location.href).toBe(AUTH_URL);
+    expect(controller.state.loginInProgress).toBe(false);
+    controller.toggleStandardLogin();
+    expect(controller.state.showStandardLogin).toBe(false);
+  });
+
+  it('does not auto-redirect when there is an authentication error', async () => {
+    const { controller, $window } = buildController({
+      logoutReason: 'Session expired',
+      publicSettings: {
+        AuthenticationMethod: 3,
+        OAuthLoginURI: 'https://idp.example.com/oauth/authorize?client_id=abc',
+        OAuthHideInternalAuth: true,
+      },
+    });
+
+    await controller.onInit();
+
+    expect($window.location.href).toBe(AUTH_URL);
+    expect(controller.state.AuthenticationError).toBe('Session expired');
+    expect(controller.state.loginInProgress).toBe(false);
   });
 });

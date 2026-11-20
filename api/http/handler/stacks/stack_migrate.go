@@ -69,6 +69,9 @@ func (handler *Handler) stackMigrate(w http.ResponseWriter, r *http.Request) *ht
 	} else if err != nil {
 		return httperror.InternalServerError("Unable to find a stack with the specified identifier inside the database", err)
 	}
+	if stack.VaultMappings != nil && stack.VaultMappings.InjectOnDeploy && portainer.EndpointID(payload.EndpointID) != stack.EndpointID {
+		return httperror.Conflict("Disable Vault injection before changing the stack environment", nil)
+	}
 
 	if stack.Type == portainer.KubernetesStack {
 		return httperror.BadRequest("Migrating a kubernetes stack is not supported", err)
@@ -120,6 +123,9 @@ func (handler *Handler) stackMigrate(w http.ResponseWriter, r *http.Request) *ht
 		return httperror.BadRequest("Invalid query parameter: endpointId", err)
 	}
 	if endpointID != int(stack.EndpointID) {
+		if stack.VaultMappings != nil && stack.VaultMappings.InjectOnDeploy {
+			return httperror.Conflict("Disable Vault injection before changing the stack environment", nil)
+		}
 		stack.EndpointID = portainer.EndpointID(endpointID)
 	}
 

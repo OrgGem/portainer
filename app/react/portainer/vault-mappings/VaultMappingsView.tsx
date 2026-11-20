@@ -67,8 +67,8 @@ export function VaultMappingsView() {
             <p>
               <strong>Saved references only.</strong> Counts describe the saved
               configuration; they do not confirm that a path exists or that a
-              running application uses it. Secret values and Vault credentials
-              are never retrieved.
+              running application uses it. Portainer retrieves mapped values
+              during deployment when injection is enabled.
             </p>
             <form onSubmit={apply} className="space-y-3">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">

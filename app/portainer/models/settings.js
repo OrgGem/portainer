@@ -29,6 +29,7 @@ export function PublicSettingsViewModel(settings) {
   this.LogoURL = settings.LogoURL;
   this.OAuthLoginURI = settings.OAuthLoginURI;
   this.OAuthLogoutURI = settings.OAuthLogoutURI;
+  this.OAuthHideInternalAuth = settings.OAuthHideInternalAuth;
   this.KubeconfigExpiry = settings.KubeconfigExpiry;
   this.Features = settings.Features;
   this.Edge = new EdgeSettingsViewModel(settings.Edge);
@@ -73,6 +74,7 @@ export function OAuthSettingsViewModel(data) {
   this.OAuthAutoCreateUsers = data.OAuthAutoCreateUsers;
   this.DefaultTeamID = data.DefaultTeamID;
   this.SSO = data.SSO;
+  this.HideInternalAuth = data.HideInternalAuth;
   this.LogoutURI = data.LogoutURI;
   this.AuthStyle = data.AuthStyle;
 }

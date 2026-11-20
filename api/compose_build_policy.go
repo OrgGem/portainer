@@ -9,6 +9,8 @@ type ComposeBuildPolicy struct {
 	MemoryPercent              int  `json:"MemoryPercent"`
 	MaxConcurrentBuilds        int  `json:"MaxConcurrentBuilds"`
 	AutoConfigureBuilderCgroup bool `json:"AutoConfigureBuilderCgroup"`
+	AllowHostNetwork           bool `json:"AllowHostNetwork"`
+	UseLegacyBuild             bool `json:"UseLegacyBuild"`
 }
 
 func DefaultComposeBuildPolicy() ComposeBuildPolicy {

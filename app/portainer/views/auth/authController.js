@@ -47,6 +47,7 @@ class AuthenticationController {
       passwordInputType: 'password',
       showOAuthLogin: false,
       showStandardLogin: false,
+      OAuthHideInternalAuth: false,
       AuthenticationError: '',
       loginInProgress: true,
       OAuthProvider: '',
@@ -252,6 +253,9 @@ class AuthenticationController {
   }
 
   toggleStandardLogin() {
+    if (this.state.OAuthHideInternalAuth) {
+      return;
+    }
     this.state.showStandardLogin = !this.state.showStandardLogin;
   }
 
@@ -262,6 +266,7 @@ class AuthenticationController {
       this.state.showStandardLogin = !this.state.showOAuthLogin;
       this.state.OAuthLoginURI = settings.OAuthLoginURI;
       this.state.OAuthProvider = this.determineOauthProvider(settings.OAuthLoginURI);
+      this.state.OAuthHideInternalAuth = settings.OAuthHideInternalAuth;
 
       const returnUrl = new URLSearchParams(this.$window.location.search).get('returnUrl');
       if (returnUrl && isValidReturnUrl(returnUrl)) {
@@ -296,7 +301,20 @@ class AuthenticationController {
 
       if (this.Authentication.isAuthenticated()) {
         await this.postLoginSteps();
+        return;
       }
+
+      if (
+        this.state.showOAuthLogin &&
+        this.state.OAuthHideInternalAuth &&
+        this.state.OAuthLoginURI &&
+        !this.state.AuthenticationError &&
+        !this.$stateParams.reload
+      ) {
+        this.$window.location.href = this.OAuthLoginURI;
+        return;
+      }
+
       this.state.loginInProgress = false;
 
       await this.authEnabledFlowAsync();

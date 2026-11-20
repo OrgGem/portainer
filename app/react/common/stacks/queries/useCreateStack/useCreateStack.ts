@@ -12,6 +12,7 @@ import PortainerError from '@/portainer/error';
 import { withError, withInvalidate } from '@/react-tools/react-query';
 import { transformAutoUpdateViewModel } from '@/react/portainer/gitops/AutoUpdateFieldset/utils';
 import { RegistryId } from '@/react/portainer/registries/types/registry';
+import { VaultMappingsInput } from '@/react/portainer/vault-mappings/types';
 
 import { queryKeys } from '../query-keys';
 
@@ -87,6 +88,7 @@ type StandaloneCreatePayload =
   | {
       method: 'file';
       payload: DockerBasePayload & {
+        vaultMappings?: VaultMappingsInput;
         /** File to upload */
         file: File;
         /** Optional webhook configuration */
@@ -96,6 +98,7 @@ type StandaloneCreatePayload =
   | {
       method: 'string';
       payload: DockerBasePayload & {
+        vaultMappings?: VaultMappingsInput;
         /** Content of the Stack file */
         fileContent: string;
         /** Optional webhook configuration */
@@ -235,6 +238,7 @@ function createStandaloneStack({ method, payload }: StandaloneCreatePayload) {
         Env: payload.env,
         Webhook: payload.webhook,
         Registries: payload.registries,
+        VaultMappings: payload.vaultMappings,
       });
     case 'git':
       return createStandaloneStackFromGit({
@@ -264,6 +268,7 @@ function createStandaloneStack({ method, payload }: StandaloneCreatePayload) {
         webhook: payload.webhook,
         fromAppTemplate: payload.fromAppTemplate,
         registries: payload.registries,
+        vaultMappings: payload.vaultMappings,
       });
     default:
       throw new Error('Invalid method');

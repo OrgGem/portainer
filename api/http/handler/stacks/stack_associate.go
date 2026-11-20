@@ -70,6 +70,9 @@ func (handler *Handler) stackAssociate(w http.ResponseWriter, r *http.Request) *
 	} else if err != nil {
 		return httperror.InternalServerError("Unable to find a stack with the specified identifier inside the database", err)
 	}
+	if stack.VaultMappings != nil && stack.VaultMappings.InjectOnDeploy && portainer.EndpointID(endpointID) != stack.EndpointID {
+		return httperror.Conflict("Disable Vault injection before changing the stack environment", nil)
+	}
 
 	resourceControl, err := handler.DataStore.ResourceControl().ResourceControlByResourceIDAndType(stackutils.ResourceControlID(stack.EndpointID, stack.Name), portainer.StackResourceControl)
 	if err != nil {

@@ -2,6 +2,7 @@ import axios, { parseAxiosError } from '@/portainer/services/axios/axios';
 import { Pair } from '@/react/portainer/settings/types';
 import { EnvironmentId } from '@/react/portainer/environments/types';
 import { RegistryId } from '@/react/portainer/registries/types/registry';
+import { VaultMappingsInput } from '@/react/portainer/vault-mappings/types';
 
 import { Stack } from '../../types';
 
@@ -21,6 +22,7 @@ export interface StandaloneFileContentPayload {
   webhook?: string;
   environmentId: EnvironmentId;
   registries?: Array<RegistryId>;
+  vaultMappings?: VaultMappingsInput;
 }
 
 export async function createStandaloneStackFromFileContent({

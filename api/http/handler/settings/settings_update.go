@@ -224,6 +224,9 @@ func (handler *Handler) updateSettings(tx dataservices.DataStoreTx, payload sett
 		settings.OAuthSettings.ClientSecret = clientSecret
 		settings.OAuthSettings.KubeSecretKey = kubeSecret
 		settings.OAuthSettings.AuthStyle = payload.OAuthSettings.AuthStyle
+		if !settings.OAuthSettings.SSO {
+			settings.OAuthSettings.HideInternalAuth = false
+		}
 	}
 
 	settings.EnableEdgeComputeFeatures = *cmp.Or(payload.EnableEdgeComputeFeatures, &settings.EnableEdgeComputeFeatures)

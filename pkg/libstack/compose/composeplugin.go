@@ -135,14 +135,45 @@ func (c *ComposeDeployer) Deploy(ctx context.Context, filePaths []string, option
 		}
 
 		if !options.ConfigOnly {
-			cleanup, err := c.managedBuild(ctx, cli, composeService, project)
+			cleanup, err := c.build(ctx, cli, composeService, project)
 			if err != nil {
 				return fmt.Errorf("compose build operation failed: %w", err)
 			}
 			defer cleanup()
 		}
 
+		// Inject after builds so application secrets never become build inputs.
+		for name, variables := range options.VaultEnv {
+			service, ok := project.Services[name]
+			if !ok {
+				if _, disabled := project.DisabledServices[name]; disabled {
+					continue
+				}
+				return fmt.Errorf("Vault mapping targets unknown service %s", name)
+			}
+			if service.Environment == nil {
+				service.Environment = types.MappingWithEquals{}
+			}
+			if service.CustomLabels == nil {
+				service.CustomLabels = types.Labels{}
+			}
+			names := make([]string, 0, len(variables))
+			for variable, value := range variables {
+				value := value
+				service.Environment[variable] = &value
+				names = append(names, variable)
+			}
+			slices.Sort(names)
+			service.CustomLabels["io.portainer.vault.env"] = strings.Join(names, ",")
+			project.Services[name] = service
+		}
+
 		if err := composeService.Up(ctx, project, opts); err != nil {
+			if len(options.VaultEnv) != 0 {
+				// Docker or Compose may include escaped environment values in its
+				// diagnostics, so do not persist those diagnostics for Vault stacks.
+				return errors.New("compose up operation failed for a Vault-enabled stack; inspect Docker and service status")
+			}
 			return fmt.Errorf("compose up operation failed: %w", err)
 		}
 
@@ -162,7 +193,7 @@ func (c *ComposeDeployer) Run(ctx context.Context, filePaths []string, serviceNa
 		if err != nil {
 			return err
 		}
-		cleanup, err := c.managedBuild(ctx, cli, composeService, project)
+		cleanup, err := c.build(ctx, cli, composeService, project)
 		if err != nil {
 			return fmt.Errorf("compose build operation failed: %w", err)
 		}

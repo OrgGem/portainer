@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/dataservices"
@@ -14,11 +15,16 @@ import (
 	"github.com/portainer/portainer/api/gitops/workflows"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/stacks/stackbuilders"
+	"github.com/portainer/portainer/api/stacks/stackconfig"
 	"github.com/portainer/portainer/api/stacks/stackutils"
+	"github.com/portainer/portainer/api/stacks/vaultinject"
+	"github.com/portainer/portainer/api/stacks/vaultrefs"
+	"github.com/portainer/portainer/pkg/authorization"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 	"github.com/portainer/portainer/pkg/validate"
 
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
@@ -29,7 +35,8 @@ type composeStackFromFileContentPayload struct {
 	// Content of the Stack file
 	StackFileContent string `example:"version: 3\n services:\n web:\n image:nginx" validate:"required"`
 	// A list of environment variables used during stack deployment
-	Env []portainer.Pair
+	Env           []portainer.Pair
+	VaultMappings *portainer.StackVaultMappings
 	// Whether the stack is from a app template
 	FromAppTemplate bool `example:"false"`
 }
@@ -166,6 +173,11 @@ func (handler *Handler) createComposeStackFromFileContent(w http.ResponseWriter,
 	}
 
 	stackPayload := createStackPayloadFromComposeFileContentPayload(payload.Name, payload.StackFileContent, payload.Env, payload.FromAppTemplate)
+	initialMappings, httpErr := handler.initialVaultMappings(securityContext, endpoint, payload.VaultMappings, stackPayload.StackFileContent)
+	if httpErr != nil {
+		return httpErr
+	}
+	stackPayload.VaultMappings = initialMappings
 
 	composeStackBuilder := stackbuilders.CreateComposeStackFileBuilder(securityContext,
 		handler.DataStore,
@@ -336,6 +348,7 @@ type composeStackFromFileUploadPayload struct {
 	Name             string
 	StackFileContent []byte
 	Env              []portainer.Pair
+	VaultMappings    *portainer.StackVaultMappings
 }
 
 func createStackPayloadFromComposeFileUploadPayload(name string, fileContentBytes []byte, env []portainer.Pair) stackbuilders.StackPayload {
@@ -366,6 +379,9 @@ func decodeRequestForm(r *http.Request) (*composeStackFromFileUploadPayload, err
 		return nil, errors.New("Invalid Env parameter")
 	}
 	payload.Env = env
+	if err := request.RetrieveMultiPartFormJSONValue(r, "VaultMappings", &payload.VaultMappings, true); err != nil {
+		return nil, errors.New("Invalid VaultMappings parameter")
+	}
 	return payload, nil
 }
 
@@ -404,6 +420,11 @@ func (handler *Handler) createComposeStackFromFileUpload(w http.ResponseWriter, 
 	}
 
 	stackPayload := createStackPayloadFromComposeFileUploadPayload(payload.Name, payload.StackFileContent, payload.Env)
+	initialMappings, httpErr := handler.initialVaultMappings(securityContext, endpoint, payload.VaultMappings, stackPayload.StackFileContent)
+	if httpErr != nil {
+		return httpErr
+	}
+	stackPayload.VaultMappings = initialMappings
 
 	composeStackBuilder := stackbuilders.CreateComposeStackFileBuilder(securityContext,
 		handler.DataStore,
@@ -416,4 +437,41 @@ func (handler *Handler) createComposeStackFromFileUpload(w http.ResponseWriter, 
 	}
 
 	return handler.decorateStackResponse(w, stack, userID)
+}
+
+// initialVaultMappings applies the same authorization and validation as the
+// existing stack mapping editor before a new stack's first deployment.
+func (handler *Handler) initialVaultMappings(ctx *security.RestrictedRequestContext, endpoint *portainer.Endpoint, input *portainer.StackVaultMappings, content []byte) (*portainer.StackVaultMappings, *httperror.HandlerError) {
+	if input == nil {
+		return nil, nil
+	}
+	if !security.ScopedEnvironmentAdmin(ctx, endpoint.ID) || !authorization.SupportsStandaloneRoles(endpoint) {
+		return nil, httperror.Forbidden("Only global or environment administrators may change Vault mappings", nil)
+	}
+	if input.InjectOnDeploy && !vaultinject.SupportedEndpoint(endpoint) {
+		return nil, httperror.BadRequest("Vault injection requires local Docker or a standard Docker Agent", nil)
+	}
+	if !ctx.IsAdmin && ctx.StandaloneRole != "" {
+		policy, err := authorization.ReadStandalonePolicy(handler.DataStore, ctx.StandaloneRole)
+		if err != nil {
+			return nil, httperror.InternalServerError("Unable to read role policy", err)
+		}
+		if !authorization.RoleFeatureAllowed(policy, ctx.StandaloneRole, "vault.edit") {
+			return nil, httperror.Forbidden("Vault mapping changes are not allowed for this role", nil)
+		}
+	}
+	services, err := stackconfig.ServicesFromContent(content)
+	if err != nil {
+		return nil, httperror.BadRequest("Unable to read Compose services for Vault mappings", nil)
+	}
+	mappings := append([]portainer.VaultMapping{}, input.Mappings...)
+	for i := range mappings {
+		if mappings[i].ID == "" {
+			mappings[i].ID = uuid.NewString()
+		}
+	}
+	if err := vaultrefs.Validate(mappings, services); err != nil {
+		return nil, httperror.BadRequest("Invalid Vault mapping", err)
+	}
+	return &portainer.StackVaultMappings{Version: 1, Mappings: mappings, InjectOnDeploy: input.InjectOnDeploy, UpdatedAt: time.Now().Unix(), UpdatedBy: ctx.UserID}, nil
 }

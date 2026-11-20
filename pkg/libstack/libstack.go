@@ -105,6 +105,8 @@ type Options struct {
 
 type DeployOptions struct {
 	Options
+	// VaultEnv is applied to service environments only during this deployment.
+	VaultEnv      map[string]map[string]string
 	ConfigOnly    bool
 	ServiceImages map[string]string
 	ForceRecreate bool

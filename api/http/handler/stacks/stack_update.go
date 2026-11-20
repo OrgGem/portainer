@@ -166,6 +166,9 @@ func (handler *Handler) updateStackInTx(tx dataservices.DataStoreTx, r *http.Req
 	}
 
 	if endpointID != 0 && endpointID != stack.EndpointID {
+		if stack.VaultMappings != nil && stack.VaultMappings.InjectOnDeploy {
+			return nil, nil, nil, httperror.Conflict("Disable Vault injection before changing the stack environment", nil)
+		}
 		stack.EndpointID = endpointID
 	}
 
@@ -432,7 +435,16 @@ func stackDeploy(dataStore dataservices.DataStore, stackID portainer.StackID, st
 		return
 	}
 
+	var deployErr error
 	if shouldUndeploy {
+		if preparer, ok := stackDeploymentConfig.(interface {
+			PrepareVault(context.Context) (context.Context, error)
+		}); ok {
+			ctx, deployErr = preparer.PrepareVault(ctx)
+		}
+	}
+
+	if shouldUndeploy && deployErr == nil {
 		if undeployErr := stackDeploymentConfig.Undeploy(ctx); undeployErr != nil {
 			if err := dataStore.UpdateTx(func(tx dataservices.DataStoreTx) error {
 				stack, err := tx.Stack().Read(stackID)
@@ -453,7 +465,9 @@ func stackDeploy(dataStore dataservices.DataStore, stackID portainer.StackID, st
 		}
 	}
 
-	deployErr := stackDeploymentConfig.Deploy(ctx)
+	if deployErr == nil {
+		deployErr = stackDeploymentConfig.Deploy(ctx)
+	}
 
 	// Finish file rollback/cleanup before exposing a terminal status. Managed
 	// stack mutations (including target retirement) remain blocked while the

@@ -3,6 +3,7 @@ import { Pair } from '@/react/portainer/settings/types';
 import { EnvironmentId } from '@/react/portainer/environments/types';
 import { RegistryId } from '@/react/portainer/registries/types/registry';
 import { json2formData } from '@/portainer/helpers/json';
+import { VaultMappingsInput } from '@/react/portainer/vault-mappings/types';
 
 import { Stack } from '../../types';
 
@@ -20,6 +21,7 @@ export type StandaloneFileUploadPayload = {
   Webhook?: string;
   environmentId: EnvironmentId;
   Registries?: Array<RegistryId>;
+  VaultMappings?: VaultMappingsInput;
 };
 
 export async function createStandaloneStackFromFile({

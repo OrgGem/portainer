@@ -14,7 +14,8 @@ type StackPayload struct {
 	StackFileContent []byte
 	Webhook          string
 	// A list of environment(endpoint) variables used during stack deployment
-	Env []portainer.Pair
+	Env           []portainer.Pair
+	VaultMappings *portainer.StackVaultMappings
 	// Optional GitOps update configuration
 	AutoUpdate *portainer.AutoUpdateSettings
 	// Whether the stack is from a app template

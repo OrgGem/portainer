@@ -57,6 +57,9 @@ func (service ServiceTx) UpdateEndpoint(ID portainer.EndpointID, endpoint *porta
 func (service ServiceTx) DeleteEndpoint(ID portainer.EndpointID) error {
 	identifier := service.service.connection.ConvertToKey(int(ID))
 
+	if err := service.tx.DeleteObject(portainer.VaultConnectionBucket, identifier); err != nil {
+		return err
+	}
 	if err := service.tx.DeleteObject(BucketName, identifier); err != nil {
 		return err
 	}

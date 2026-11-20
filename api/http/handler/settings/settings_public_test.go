@@ -72,3 +72,22 @@ func TestGeneratePublicSettingsWithoutSSO(t *testing.T) {
 		t.Errorf("wrong OAuthLogoutURI, want: %s, got: %s", dummyOAuthLogoutURI, publicSettings.OAuthLogoutURI)
 	}
 }
+
+func TestGeneratePublicSettingsWithHideInternalAuth(t *testing.T) {
+	t.Parallel()
+	_, mockAppSettings := newTestSettings()
+
+	mockAppSettings.OAuthSettings.SSO = true
+	mockAppSettings.OAuthSettings.HideInternalAuth = true
+	publicSettings := generatePublicSettings(mockAppSettings)
+	if !publicSettings.OAuthHideInternalAuth {
+		t.Errorf("expected OAuthHideInternalAuth to be true when SSO and HideInternalAuth are enabled")
+	}
+
+	mockAppSettings.OAuthSettings.SSO = false
+	mockAppSettings.OAuthSettings.HideInternalAuth = true
+	publicSettings = generatePublicSettings(mockAppSettings)
+	if publicSettings.OAuthHideInternalAuth {
+		t.Errorf("expected OAuthHideInternalAuth to be false when SSO is disabled")
+	}
+}

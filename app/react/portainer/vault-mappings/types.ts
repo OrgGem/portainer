@@ -10,14 +10,21 @@ export interface VaultMapping {
 export interface VaultConfiguration {
   Version: number;
   Mappings: VaultMapping[];
+  InjectOnDeploy?: boolean;
   UpdatedAt: number;
   UpdatedBy: number;
+}
+
+export interface VaultMappingsInput {
+  Mappings: VaultMapping[];
+  InjectOnDeploy: boolean;
 }
 
 export interface StackVaultResponse {
   Configuration: VaultConfiguration;
   Services: string[];
   CanEdit: boolean;
+  InjectionSupported?: boolean;
   Unavailable?: string;
 }
 

@@ -3,6 +3,7 @@ package compose
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -30,6 +31,8 @@ import (
 
 const managedBuilderMarker = "PORTAINER_MANAGED_COMPOSE_BUILDER=1"
 const managedBuildkitImage = "moby/buildkit:v0.25.1"
+
+var errLegacyBuildSelected = errors.New("legacy Compose build selected")
 
 type buildBudget struct{ Memory, Quota int64 }
 
@@ -166,7 +169,20 @@ func builderResourcesMatch(h *container.HostConfig, b buildBudget) bool {
 	return h != nil && h.CgroupnsMode.IsPrivate() && h.CPUPeriod == 100000 && h.CPUQuota == b.Quota && h.NanoCPUs == 0 && h.Memory == b.Memory && h.MemorySwap == b.Memory
 }
 
-func prepareManagedBuilder(ctx context.Context, cli *command.DockerCli, ng *store.NodeGroup, b buildBudget, first, allowRepair, defaultPrivate bool) error {
+func managedBuilderNetworkMatches(current container.InspectResponse, hostNetwork bool) bool {
+	if current.Config == nil || current.HostConfig == nil {
+		return false
+	}
+	if hostNetwork {
+		return current.HostConfig.NetworkMode.IsHost() && slices.Equal(current.Config.Cmd, []string{
+			"--allow-insecure-entitlement=network.host", "--oci-worker-net=bridge",
+		})
+	}
+	mode := current.HostConfig.NetworkMode
+	return (mode.IsDefault() || mode == "bridge" || mode == "") && len(current.Config.Cmd) == 0
+}
+
+func prepareManagedBuilder(ctx context.Context, cli *command.DockerCli, ng *store.NodeGroup, b buildBudget, first, idle, allowRepair, defaultPrivate, hostNetwork bool) error {
 	name := driver.BuilderName(ng.Nodes[0].Name)
 	current, err := cli.Client().ContainerInspect(ctx, name)
 	if err != nil && !errdefs.IsNotFound(err) {
@@ -175,24 +191,55 @@ func prepareManagedBuilder(ctx context.Context, cli *command.DockerCli, ng *stor
 	if errdefs.IsNotFound(err) && !defaultPrivate && !allowRepair {
 		return fmt.Errorf("managed Compose builds require a private default cgroup namespace or an existing private builder; automatic builder configuration is disabled")
 	}
+	if errdefs.IsNotFound(err) && hostNetwork {
+		if !idle {
+			return fmt.Errorf("managed Compose builder disappeared during active builds")
+		}
+		if err := checkHostBuildNetwork(ctx, cli); err != nil {
+			return fmt.Errorf("cannot configure managed host-network build: %w; resolve the conflict or use legacy Compose build", err)
+		}
+	}
 	if err == nil {
 		if current.Config == nil || !slices.Contains(current.Config.Env, managedBuilderMarker) || current.Config.Image != managedBuildkitImage {
 			return fmt.Errorf("container %s is not a managed Compose builder", name)
 		}
-		if current.HostConfig == nil || !current.HostConfig.CgroupnsMode.IsPrivate() {
-			if !allowRepair {
-				return fmt.Errorf("managed Compose builds require a private cgroup namespace; enable automatic builder configuration or repair the idle builder manually")
-			}
-			if err := recreatePrivateBuilder(ctx, cli, name, current); err != nil {
-				return err
-			}
-			return prepareManagedBuilder(ctx, cli, ng, b, false, false, defaultPrivate)
+		if current.HostConfig == nil {
+			return fmt.Errorf("container %s has no host configuration", name)
 		}
+		needsPrivate := !current.HostConfig.CgroupnsMode.IsPrivate()
+		if needsPrivate && !allowRepair {
+			return fmt.Errorf("managed Compose builds require a private cgroup namespace; enable automatic builder configuration or repair the idle builder manually")
+		}
+		needsNetworkChange := !managedBuilderNetworkMatches(current, hostNetwork)
 		// On server restart, cancel any orphaned builds before accepting new work.
 		if first && current.State != nil && current.State.Running {
 			if err := cli.Client().ContainerStop(ctx, name, container.StopOptions{}); err != nil {
 				return err
 			}
+			current.State.Running = false
+		}
+		if hostNetwork && (needsNetworkChange || current.State == nil || !current.State.Running) {
+			if !idle {
+				return fmt.Errorf("managed Compose builder configuration changed during active builds")
+			}
+			if current.HostConfig.NetworkMode.IsHost() && current.State != nil && current.State.Running {
+				if err := cli.Client().ContainerStop(ctx, name, container.StopOptions{}); err != nil {
+					return err
+				}
+				current.State.Running = false
+			}
+			if err := checkHostBuildNetwork(ctx, cli); err != nil {
+				return fmt.Errorf("cannot configure managed host-network build: %w; resolve the conflict or use legacy Compose build", err)
+			}
+		}
+		if needsPrivate || needsNetworkChange {
+			if !idle {
+				return fmt.Errorf("managed Compose builder configuration changed during active builds")
+			}
+			if err := recreateManagedBuilder(ctx, cli, name, current, needsPrivate, hostNetwork); err != nil {
+				return err
+			}
+			return prepareManagedBuilder(ctx, cli, ng, b, false, idle, false, defaultPrivate, hostNetwork)
 		}
 		if !builderResourcesMatch(current.HostConfig, b) {
 			result, err := cli.Client().ContainerUpdate(ctx, name, container.UpdateConfig{Resources: container.Resources{
@@ -243,26 +290,37 @@ func prepareManagedBuilder(ctx context.Context, cli *command.DockerCli, ng *stor
 		return err
 	}
 	if current.HostConfig != nil && !current.HostConfig.CgroupnsMode.IsPrivate() && allowRepair {
-		if err := recreatePrivateBuilder(ctx, cli, name, current); err != nil {
+		if err := recreateManagedBuilder(ctx, cli, name, current, true, hostNetwork); err != nil {
 			return err
 		}
-		return prepareManagedBuilder(ctx, cli, ng, b, false, false, defaultPrivate)
+		return prepareManagedBuilder(ctx, cli, ng, b, false, idle, false, defaultPrivate, hostNetwork)
 	}
 	if !builderResourcesMatch(current.HostConfig, b) {
 		return fmt.Errorf("Docker builder CPU/memory limits could not be verified")
 	}
+	if !managedBuilderNetworkMatches(current, hostNetwork) {
+		return fmt.Errorf("Docker builder network configuration could not be verified")
+	}
 	return nil
 }
 
-// Docker cannot change a container's cgroup namespace in place. Replace only
-// our idle builder, preserving its named cache volume and all resource limits.
-// Never change Docker daemon settings or restart the host.
-func recreatePrivateBuilder(ctx context.Context, cli *command.DockerCli, name string, current container.InspectResponse) error {
+// Docker cannot change these container settings in place. Replace only our idle
+// builder, preserving its named cache volume and resource limits.
+func recreateManagedBuilder(ctx context.Context, cli *command.DockerCli, name string, current container.InspectResponse, privateCgroup, hostNetwork bool) error {
 	if current.Config == nil || current.HostConfig == nil || current.Config.Image != managedBuildkitImage || !slices.Contains(current.Config.Env, managedBuilderMarker) {
 		return fmt.Errorf("refusing to reconfigure an unrecognized Compose builder")
 	}
 	host := *current.HostConfig
-	host.CgroupnsMode = container.CgroupnsModePrivate
+	if privateCgroup {
+		host.CgroupnsMode = container.CgroupnsModePrivate
+	}
+	config := *current.Config
+	config.Cmd = nil
+	host.NetworkMode = container.NetworkMode("default")
+	if hostNetwork {
+		host.NetworkMode = container.NetworkMode("host")
+		config.Cmd = []string{"--allow-insecure-entitlement=network.host", "--oci-worker-net=bridge"}
+	}
 	if current.State != nil && current.State.Running {
 		if err := cli.Client().ContainerStop(ctx, name, container.StopOptions{}); err != nil {
 			return err
@@ -271,24 +329,94 @@ func recreatePrivateBuilder(ctx context.Context, cli *command.DockerCli, name st
 	if err := cli.Client().ContainerRemove(ctx, name, container.RemoveOptions{}); err != nil {
 		return err
 	}
-	if _, err := cli.Client().ContainerCreate(ctx, current.Config, &host, &network.NetworkingConfig{}, nil, name); err != nil {
-		return fmt.Errorf("unable to recreate managed builder with a private cgroup namespace (cache retained): %w", err)
+	if _, err := cli.Client().ContainerCreate(ctx, &config, &host, &network.NetworkingConfig{}, nil, name); err != nil {
+		return fmt.Errorf("unable to recreate managed builder (cache retained): %w", err)
 	}
 	return nil
 }
 
-// managedBuild is the only path to Compose.Build. It deliberately does not use
-// process-wide BUILDX_BUILDER, which would race between environments.
-func (c *ComposeDeployer) managedBuild(ctx context.Context, cli *command.DockerCli, service api.Compose, project *types.Project) (func(), error) {
+// build selects the Compose build path without changing process-wide builder settings.
+func (c *ComposeDeployer) build(ctx context.Context, cli *command.DockerCli, service api.Compose, project *types.Project) (func(), error) {
+	if !hasComposeBuild(project) {
+		return func() {}, nil
+	}
+	policy, err := c.buildPolicy()
+	if err != nil {
+		return nil, err
+	}
+	if !policy.UseLegacyBuild {
+		cleanup, err := c.managedBuild(ctx, cli, service, project)
+		if !errors.Is(err, errLegacyBuildSelected) {
+			return cleanup, err
+		}
+	}
+	return buildAndPinImages(ctx, cli, service, project, api.BuildOptions{})
+}
+
+func hasComposeBuild(project *types.Project) bool {
+	for _, service := range project.Services {
+		if service.Build != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func validateManagedBuild(project *types.Project, policy portainer.ComposeBuildPolicy) (bool, error) {
+	selected := selectedBuildServices(project)
 	hasBuild := false
-	for _, s := range project.Services {
-		if s.Build == nil {
-			continue
+	for _, services := range []types.Services{project.Services, project.DisabledServices} {
+		for name, service := range services {
+			if service.Build == nil || !selected[name] {
+				continue
+			}
+			hasBuild = true
+			if service.Build.Privileged {
+				return false, fmt.Errorf("service %s: privileged builds are not permitted by the managed build policy", name)
+			}
+			hostRequested := service.Build.Network == "host"
+			for _, entitlement := range service.Build.Entitlements {
+				if entitlement != "network.host" {
+					return false, fmt.Errorf("service %s: entitlement %s is not permitted by the managed build policy", name, entitlement)
+				}
+				hostRequested = true
+			}
+			if hostRequested && !policy.AllowHostNetwork {
+				return false, fmt.Errorf("service %s: host networking is not permitted by the managed build policy", name)
+			}
 		}
-		hasBuild = true
-		if s.Build.Privileged || len(s.Build.Entitlements) != 0 {
-			return nil, fmt.Errorf("service %s: privileged builds and extra entitlements are not permitted by the managed build policy", s.Name)
+	}
+	return hasBuild, nil
+}
+
+func requestsHostBuildNetwork(project *types.Project) bool {
+	selected := selectedBuildServices(project)
+	for _, services := range []types.Services{project.Services, project.DisabledServices} {
+		for name, service := range services {
+			if selected[name] && service.Build != nil && (service.Build.Network == "host" || slices.Contains(service.Build.Entitlements, "network.host")) {
+				return true
+			}
 		}
+	}
+	return false
+}
+
+// managedBuild deliberately does not use process-wide BUILDX_BUILDER, which
+// would race between environments.
+func (c *ComposeDeployer) managedBuild(ctx context.Context, cli *command.DockerCli, service api.Compose, project *types.Project) (func(), error) {
+	if !hasComposeBuild(project) {
+		return func() {}, nil
+	}
+	policy, err := c.buildPolicy()
+	if err != nil {
+		return nil, err
+	}
+	if policy.UseLegacyBuild {
+		return nil, errLegacyBuildSelected
+	}
+	hasBuild, err := validateManagedBuild(project, policy)
+	if err != nil {
+		return nil, err
 	}
 	if !hasBuild {
 		return func() {}, nil
@@ -315,21 +443,46 @@ func (c *ComposeDeployer) managedBuild(ctx context.Context, cli *command.DockerC
 	value, _ := hostBuildQueues.LoadOrStore(info.ID, &hostBuildQueue{changed: make(chan struct{})})
 	q := value.(*hostBuildQueue)
 	log.Info().Str("host", info.ID).Str("stack", project.Name).Msg("Waiting for managed Compose build slot")
-	release, p, err := q.acquire(ctx, c.buildPolicy, info, func(policy portainer.ComposeBuildPolicy, b buildBudget, first bool) error {
+	readPolicy := func() (portainer.ComposeBuildPolicy, error) {
+		policy, err := c.buildPolicy()
+		if err != nil {
+			return policy, err
+		}
+		if policy.UseLegacyBuild {
+			return policy, errLegacyBuildSelected
+		}
+		_, err = validateManagedBuild(project, policy)
+		// Jobs with different builder network modes wait for each other so one
+		// managed container continues to enforce the shared host budget.
+		policy.AllowHostNetwork = policy.AllowHostNetwork && requestsHostBuildNetwork(project)
+		return policy, err
+	}
+	release, p, err := q.acquire(ctx, readPolicy, info, func(policy portainer.ComposeBuildPolicy, b buildBudget, first bool) error {
 		ng.Nodes[0].DriverOpts = map[string]string{
 			"image": managedBuildkitImage, "cpu-period": "100000", "cpu-quota": strconv.FormatInt(b.Quota, 10),
 			"memory": strconv.FormatInt(b.Memory, 10), "memory-swap": strconv.FormatInt(b.Memory, 10),
 			"default-load": "true", "env.PORTAINER_MANAGED_COMPOSE_BUILDER": "1",
 		}
+		if policy.AllowHostNetwork {
+			ng.Nodes[0].DriverOpts["network"] = "host"
+			ng.Nodes[0].BuildkitdFlags = []string{"--allow-insecure-entitlement=network.host", "--oci-worker-net=bridge"}
+		}
 		q.mu.Lock()
 		idle := q.active == 0
 		q.mu.Unlock()
-		return prepareManagedBuilder(ctx, cli, ng, b, first, policy.AutoConfigureBuilderCgroup && idle, slices.Contains(info.SecurityOptions, "name=cgroupns"))
+		return prepareManagedBuilder(ctx, cli, ng, b, first, idle, policy.AutoConfigureBuilderCgroup && idle, slices.Contains(info.SecurityOptions, "name=cgroupns"), policy.AllowHostNetwork)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to enforce Compose build policy: %w", err)
 	}
 	defer release()
+	log.Info().Str("host", info.ID).Int("cpuPercent", p.CPUPercent).Int("memoryPercent", p.MemoryPercent).Msg("Building within shared host budget")
+	return buildAndPinImages(ctx, cli, service, project, api.BuildOptions{Builder: ng.Name})
+}
+
+// Preserve each build's output until its deployment finishes, even if another
+// stack concurrently moves the same user-facing image tag.
+func buildAndPinImages(ctx context.Context, cli *command.DockerCli, service api.Compose, project *types.Project, options api.BuildOptions) (func(), error) {
 	tags := leaseBuildImages(project, uuid.NewString())
 	cleanup := func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -346,8 +499,7 @@ func (c *ComposeDeployer) managedBuild(ctx context.Context, cli *command.DockerC
 			cleanup()
 		}
 	}()
-	log.Info().Str("host", info.ID).Int("cpuPercent", p.CPUPercent).Int("memoryPercent", p.MemoryPercent).Msg("Building within shared host budget")
-	if err := service.Build(ctx, project, api.BuildOptions{Builder: ng.Name}); err != nil {
+	if err := service.Build(ctx, project, options); err != nil {
 		return nil, err
 	}
 	// Up/Create/Run must only consume these images, never invoke an implicit
@@ -371,10 +523,8 @@ func (c *ComposeDeployer) managedBuild(ctx context.Context, cli *command.DockerC
 	return cleanup, nil
 }
 
-// Keep user tags for compatibility, but retain each job's image until deployment
-// finishes. An overlapping build may move a user tag before ContainerCreate.
-func leaseBuildImages(project *types.Project, job string) map[string]string {
-	tags := map[string]string{}
+// Include profile-disabled services referenced by additional build contexts.
+func selectedBuildServices(project *types.Project) map[string]bool {
 	selected := map[string]bool{}
 	var include func(string)
 	include = func(name string) {
@@ -397,6 +547,14 @@ func leaseBuildImages(project *types.Project, job string) map[string]string {
 	for name := range project.Services {
 		include(name)
 	}
+	return selected
+}
+
+// Keep user tags for compatibility, but retain each job's image until deployment
+// finishes. An overlapping build may move a user tag before ContainerCreate.
+func leaseBuildImages(project *types.Project, job string) map[string]string {
+	tags := map[string]string{}
+	selected := selectedBuildServices(project)
 	// Compose can enable profile-disabled services referenced by additional_contexts.
 	for _, services := range []types.Services{project.Services, project.DisabledServices} {
 		for name, s := range services {

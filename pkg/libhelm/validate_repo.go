@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/portainer/portainer/pkg/libhelm/sdk"
-	"github.com/portainer/portainer/pkg/libhttp/ssrf"
 	"helm.sh/helm/v4/pkg/cli"
 	"helm.sh/helm/v4/pkg/getter"
 	repo "helm.sh/helm/v4/pkg/repo/v1"
@@ -41,7 +40,10 @@ func ValidateHelmRepositoryURL(repoUrl string, _ *http.Client) error {
 		return fmt.Errorf("failed to derive repo name: %w", err)
 	}
 
-	ssrfTransport := ssrf.NewTransport(nil)
+	ssrfTransport, err := sdk.NewRepoTransport()
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP transport: %w", err)
+	}
 
 	r, err := repo.NewChartRepository(
 		&repo.Entry{

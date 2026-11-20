@@ -32,31 +32,79 @@ const fixture: StackVaultResponse = {
         Engine: 'kv-v2',
       },
     ],
+    InjectOnDeploy: false,
   },
   Services: ['web', 'worker'],
   CanEdit: true,
+  InjectionSupported: true,
 };
 
-function setup(canEdit = true) {
+function setup(
+  canEdit = true,
+  configuration = fixture.Configuration,
+  injectionSupported = true
+) {
   server.use(
     http.get('/api/stacks/1/vault', () =>
-      HttpResponse.json({ ...fixture, CanEdit: canEdit })
+      HttpResponse.json({
+        ...fixture,
+        Configuration: configuration,
+        CanEdit: canEdit,
+        InjectionSupported: injectionSupported,
+      })
     )
   );
   const Component = withTestQueryProvider(withTestRouter(StackVaultTab));
   render(<Component stack={{ Id: 1, EndpointId: 1 } as Stack} />);
 }
 
-test('a viewer sees references and export but no write controls or secret input', async () => {
+test('a viewer sees references and injection status but no write controls', async () => {
   setup(false);
   expect(await screen.findByText('DB_PASSWORD')).toBeVisible();
   expect(screen.getByText('kv/data/apps/demo')).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Edit reference' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Add mapping' })).toBeNull();
-  expect(screen.queryByLabelText(/secret value/i)).toBeNull();
+  expect(screen.getByText('Vault injection at deploy:')).toBeVisible();
+  expect(screen.getByText('disabled')).toBeVisible();
+  expect(screen.queryByTestId('toggle-vault-injection')).toBeNull();
+});
+
+test('enabling deploy injection saves the current mapping and new setting', async () => {
+  const configuration = { ...fixture.Configuration, InjectOnDeploy: false };
+  const updates: unknown[] = [];
+  server.use(
+    http.put('/api/stacks/1/vault', async ({ request }) => {
+      const payload = (await request.json()) as Record<string, unknown>;
+      updates.push(payload);
+      Object.assign(configuration, payload, { Version: 5 });
+      return HttpResponse.json(configuration);
+    })
+  );
+
+  setup(true, configuration);
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Enable deployment injection' })
+  );
+
+  await waitFor(() => expect(screen.getByText('enabled')).toBeVisible());
+  expect(updates).toEqual([
+    {
+      Version: 4,
+      Mappings: fixture.Configuration.Mappings,
+      InjectOnDeploy: true,
+    },
+  ]);
+});
+
+test('unsupported environments cannot enable deploy injection', async () => {
+  setup(true, fixture.Configuration, false);
+
   expect(
-    screen.getByText('Saved configuration, runtime not verified.')
+    await screen.findByText(
+      'Deployment injection requires local Docker or a standard Docker Agent.'
+    )
   ).toBeVisible();
+  expect(screen.getByTestId('toggle-vault-injection')).toBeDisabled();
 });
 
 test('editing submits reference-only fields with the version and preserves the draft on conflict', async () => {

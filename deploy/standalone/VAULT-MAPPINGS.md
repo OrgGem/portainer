@@ -1,110 +1,125 @@
-# UI ánh xạ Vault và thống kê tham chiếu
+# Kết nối Vault và ánh xạ biến môi trường
 
-## Màn hình sử dụng
+Portainer đọc HashiCorp Vault khi triển khai stack Docker Compose. Giá trị được
+truyền cho đúng service dưới dạng biến môi trường, ứng dụng đọc biến như bình
+thường. Vault được quản lý bên ngoài Portainer.
 
-**Stack → Vault mappings** cho phép xem, thêm, sửa và xóa ánh xạ:
+## Cấu hình kết nối theo environment
+
+Global Administrator mở **Environments → environment → HashiCorp Vault** và
+nhập URL HTTPS, AppRole RoleID, SecretID và auth mount. Auth mount mặc định là
+`approle`. Nếu Vault dùng CA nội bộ, thêm chứng chỉ CA dạng PEM. Portainer
+Server phải kết nối được tới Vault URL, kể cả khi Docker host dùng Portainer
+Agent.
+
+SecretID chỉ được nhập và không được trả lại trên UI. Để trống SecretID khi cập
+nhật để giữ giá trị cũ. Khi đổi URL Vault, nhập lại SecretID. Thông tin kết nối
+được lưu cùng dữ liệu Portainer. Mã hóa database của Portainer bảo vệ dữ liệu
+này khi instance đã bật tùy chọn mã hóa. Giới hạn quyền truy cập bản backup
+`/data` phù hợp với cách instance đang lưu dữ liệu.
+
+Bên quản lý Vault cung cấp AppRole có quyền đọc các path cần thiết. Cần biết
+engine là KV v1 hay KV v2 và tên key chứa giá trị.
+
+## Ánh xạ cho stack
+
+Trong **Create stack**, chọn Editor hoặc Upload và thêm **Vault mappings**
+trước khi triển khai. Với stack hiện có, mở **Stack → Vault mappings**, lưu
+ánh xạ và chọn **Enable deployment injection**. Mỗi ánh xạ gồm:
 
 | Trường | Ví dụ | Ý nghĩa |
 | --- | --- | --- |
-| Service | `backend` | Service đã được khai báo trong Compose |
-| Environment variable | `DB_PASSWORD` | Tên biến ứng dụng nhận từ Vault Agent |
-| Vault API path | `kv/data/apps/backend` | Đường dẫn API, gồm `/data/` với KV v2 |
-| Key | `password` | Tên key trong dữ liệu KV |
+| Service | `backend` | Service trong Compose |
+| Environment variable | `DB_PASSWORD` | Tên biến ứng dụng đọc |
+| Vault API path | `kv/data/apps/backend` | API path, gồm `/data/` với KV v2 |
+| Key | `password` | Key trong dữ liệu KV |
 | Engine | `kv-v2` | KV v1 hoặc KV v2 |
 
-Màn hình hiển thị version, thời điểm lưu và ID người thay đổi gần nhất. Một
-service không được khai báo trùng tên biến. Tối đa 128 ánh xạ/stack. Tên biến và
-key dùng chữ, số, dấu gạch dưới, bắt đầu bằng chữ/gạch dưới, tối đa 128 ký tự.
-Path tối đa 512 ký tự; không nhận URL, query string hay đoạn `..`.
-
-**Vault mappings** ở sidebar là trang tổng hợp, gồm:
-
-- Bảng environment → stack → service → biến → path → key, kèm version/người lưu.
-- Bộ lọc environment, stack, tên biến, path, key và service. Các điều kiện kết
-  hợp bằng AND; bộ lọc văn bản tìm chuỗi con, không phân biệt chữ hoa/thường.
-- Thống kê số ánh xạ, tên biến khác nhau, tên path khác nhau, environment, stack
-  và service. Service được đếm theo cặp stack/service; path đếm theo chuỗi path,
-  không khẳng định các ứng dụng dùng chung một Vault server.
-- Phân trang 50 dòng. Thống kê tính trên toàn bộ kết quả đã lọc trước phân trang.
-- Link từ mỗi stack mở lại tab ánh xạ. Link trong tab stack mở inventory với
-  environment/stack đã được chọn sẵn.
-
-Các dòng, lựa chọn bộ lọc và thống kê đều được giới hạn quyền **trước** khi trả
-về trình duyệt. Không tiết lộ tên/path/số lượng của stack ngoài quyền xem.
-
-## Quyền
+Khi deploy, Portainer đăng nhập AppRole, đọc các path cần thiết và đưa giá trị
+vào env của service. Nếu biến trùng tên với env trong Compose, giá trị từ
+mapping được ưu tiên cho service đó. KV key cần có giá trị chuỗi. Mỗi
+service chỉ ánh xạ một lần cho mỗi tên biến và mỗi stack có tối đa 128 ánh xạ.
 
 Global Administrator và Environment Admin được quản lý ánh xạ trong phạm vi
-được cấp. Các role khác chỉ xem nếu có quyền environment và quyền xem stack.
-Policy theo stack vẫn áp dụng: user phải có ownership và grant `view` nếu stack
-có policy, trừ Environment Admin. Read-only không được sửa, kể cả có grant theo
-stack. Thay đổi role/thành viên Team được kiểm tra lại cho request tiếp theo.
+được cấp. Quyền deploy và policy theo stack vẫn áp dụng. Mỗi lần lưu gửi version
+hiện tại. Nếu API trả 409, reload, đối chiếu và lưu lại.
 
-Mỗi lần ghi gửi version hiện tại; API trả 409 khi dữ liệu đã đổi. UI giữ nội
-dung đang nhập để người dùng reload, đối chiếu và lưu lại. Backend cập nhật
-metadata trong transaction, bảo toàn các field khác của stack. Không cho sửa
-khi stack đang deploy hoặc chờ phục hồi cấu hình.
+## Vòng đời giá trị
 
-## Dữ liệu và Vault Agent
+Lưu mapping không thay đổi container đang chạy. Deploy hoặc redeploy đọc giá trị
+mới. Nếu Vault không truy cập được, AppRole bị từ chối hoặc thiếu key, deploy
+thất bại. Việc đổi giá trị trong Vault không tự cập nhật app. Restart container
+hiện có tiếp tục dùng env lúc container được tạo. Deploy lại để đọc giá trị mới.
 
-Portainer lưu **tham chiếu**, không kết nối Vault để đọc giá trị. API không nhận
-field value, token, secret hoặc credential; các field lạ bị từ chối. Inventory
-không trả Compose, `stack.Env`, cấu hình đăng nhập hay giá trị biến môi trường.
-Metadata nằm trong dữ liệu stack và đi cùng backup `/data`.
+Apply hoặc rollback file cấu hình đọc lại Vault cho service được tạo lại.
+Rollback file cấu hình dùng secret hiện tại của Vault. Nếu đổi tên hoặc xóa
+service trong Compose, cập nhật mapping tương ứng trước lần deploy tiếp theo.
 
-**Saved configuration, runtime not verified** là trạng thái của bản này. Lưu
-ánh xạ không tự triển khai lại container, không sửa `stack.Env` và không tự dò
-đọc cấu hình của các Agent đang chạy. Các ánh xạ cũ đặt trong `agent.hcl` bên
-ngoài Portainer cần được khai báo lại ở UI để xuất hiện trong thống kê.
+Giá trị đọc từ Vault được đưa vào Docker Config.Env và có thể được đọc bởi
+người có quyền Docker API hoặc `docker inspect`. Bảng ENV trong Portainer che
+giá trị của các biến được đánh dấu là từ Vault. Các bản backup Docker hoặc
+công cụ quản trị có quyền đọc cấu hình container cũng có thể tiếp cận env.
 
-Sau khi lưu, chọn service và **Preview Agent template → Download template**.
-File tải về chỉ chứa các stanza `env_template` của service đó, dùng các
-tham chiếu đã lưu. Ví dụ:
+Stack cũ có mapping Agent template giữ trạng thái injection tắt khi nâng cấp.
+Chọn **Enable deployment injection** nếu muốn Portainer đọc Vault khi deploy.
+Nút xuất Agent template vẫn hữu ích cho ứng dụng đang dùng Agent riêng.
 
-```hcl
-env_template "DB_PASSWORD" {
-  contents = "{{ with secret \"kv/data/apps/backend\" }}{{ .Data.data.password }}{{ end }}"
-  error_on_missing_key = true
-}
-```
+## Phạm vi và API
 
-Ghép stanza vào `agent.hcl` của ứng dụng, giữ `auto_auth`, Vault address/TLS,
-`template_config` và `exec` của ứng dụng. Bật `exit_on_retry_failure = true` trong
-`template_config`. Agent dùng quyền riêng của ứng dụng để đọc secret và truyền
-biến cho tiến trình con. Triển khai qua quy trình phát hành thông thường, hoặc
-qua cơ chế file cấu hình hiện có nếu quản trị viên đã khai báo target phù hợp.
-Agent phải là tiến trình cha của ứng dụng theo
-[Vault Agent process supervisor](https://developer.hashicorp.com/vault/docs/agent-and-proxy/agent/process-supervisor).
-Không chạy render template trong Portainer.
-
-UI quản lý ánh xạ hỗ trợ stack Docker Compose editor/upload, một file, đang
-được Portainer quản lý. Không có tự động khám phá secret, kiểm tra path tồn tại,
-quản lý Vault policy/AppRole, hoặc xác nhận cấu hình đã áp dụng vào runtime.
-Nếu service bị xóa khỏi Compose, tab đánh dấu tham chiếu cũ để admin sửa/xóa;
-export không chấp nhận service không còn tồn tại.
-
-## API
+Bản này hỗ trợ stack do Portainer quản lý, Docker Standalone local hoặc Docker
+host kết nối qua Portainer Agent, nguồn Editor/Upload một file. Apply/rollback
+file cấu hình tiếp tục theo phạm vi được nêu trong [README](README.md).
 
 | API | Kết quả / quyền |
 | --- | --- |
-| `GET /api/stacks/{id}/vault` | Configuration, Services, CanEdit; cần quyền xem stack |
-| `PUT /api/stacks/{id}/vault` | `{Version, Mappings}`; global/environment admin |
-| `GET /api/stacks/{id}/vault/template?service=backend` | Template tham chiếu và version đã lưu; cần quyền xem |
-| `GET /api/stacks/vault/mappings` | Items, Summary, Environments, Stacks; chỉ dữ liệu được phép xem |
+| `GET /api/endpoints/{id}/vault` | Kết nối Vault và trạng thái SecretID, Global Admin |
+| `PUT /api/endpoints/{id}/vault` | Cập nhật kết nối và SecretID chỉ ghi, Global Admin |
+| `GET /api/stacks/{id}/vault` | Configuration, Services, CanEdit, InjectionSupported; cần quyền xem stack |
+| `PUT /api/stacks/{id}/vault` | Version, Mappings, InjectOnDeploy tùy chọn; global/environment admin |
+| `GET /api/stacks/{id}/vault/template?service=backend` | Agent template và version đã lưu |
+| `GET /api/stacks/vault/mappings` | Inventory và thống kê của dữ liệu được phép xem |
 
-Inventory nhận `environmentId`, `stackId`, `variable`, `path`, `key`, `service`,
-`offset` và `limit` (1–200, mặc định 50). DTO mới không bổ sung bất kỳ trường
-chứa giá trị secret nào. Xóa ánh xạ bằng cách gửi danh sách còn lại và version;
-danh sách rỗng xóa toàn bộ ánh xạ của stack.
+Trang **Vault mappings** ở sidebar thống kê các tham chiếu đã lưu theo
+environment, stack, service, biến, path và key. Thống kê không xác nhận giá trị
+hiện có trong container. Các mapping Agent bên ngoài Portainer cần được khai
+báo trong UI để xuất hiện ở inventory.
 
-## Kiểm tra
+## Kiểm tra và nâng cấp
+
+Script [vault_deploy_smoke.py](tests/vault_deploy_smoke.py) dùng Portainer,
+Vault dev, Portainer Agent, network và volume tạm trên Docker daemon hiện tại.
+Script tạo dữ liệu AppRole và secret tổng hợp để kiểm tra đường đi deploy. Cần
+Python 3, Docker daemon và các image mà script sử dụng. Chạy từ thư mục gốc
+repository sau khi đã build image Portainer:
 
 ```powershell
-docker build -f deploy/standalone/Dockerfile -t portainer-custom:2.45.3-vault-ui .
-python deploy/standalone/tests/vault_mappings_smoke.py
+$env:PORTAINER_TEST_IMAGE = 'portainer-custom:2.45.3-vault-deploy'
+python deploy/standalone/tests/vault_deploy_smoke.py
 ```
 
-Script dùng các tài khoản và tài nguyên tạm thời để kiểm tra quyền, bộ lọc,
-pagination, lưu sau restart, từ chối trường secret, và thu hồi membership. Sau
-đó dùng đúng template xuất từ API để chạy thử AppRole/Vault Agent, xác nhận
-injection và rotation bằng secret tổng hợp. Không gọi Vault production.
+Biến `PORTAINER_TEST_IMAGE` mặc định là tag ở trên. Script mặc định dùng
+`portainer/agent:2.45.3`; có thể chọn image Agent khác cho kiểm thử qua
+`PORTAINER_AGENT_TEST_IMAGE`. Script có thể pull các image Vault, ứng dụng
+và Agent khi Docker host chưa có sẵn. Xem exit code và kết quả từng bước của
+chính lần chạy để đánh giá. Kiểm thử này dùng Vault dev tạm, nên cần xác nhận
+riêng kết nối và quyền với Vault do bên ngoài quản lý khi áp dụng.
+
+Script [vault_mappings_smoke.py](tests/vault_mappings_smoke.py) kiểm tra luồng
+inventory và ví dụ Agent trước đây. Đây là kiểm thử riêng cho chức năng đó.
+
+Khi muốn nâng cấp Portainer đang chạy bằng image mới, xác định trước Compose,
+volume `/data` và giá trị `STACK_CONFIG_ROOT` mà instance hiện tại đang dùng,
+rồi sao lưu dữ liệu theo quy trình đang áp dụng. Nếu instance được triển khai
+bằng các file Compose trong thư mục này, đặt `PORTAINER_IMAGE` thành tag mới,
+giữ project, volume, cấu hình và các file override hiện có, rồi áp dụng lại
+service Portainer. Ví dụ PowerShell cho cấu hình dùng file Compose chính:
+
+```powershell
+$env:PORTAINER_IMAGE = 'portainer-custom:2.45.3-vault-deploy'
+docker compose -f deploy/standalone/compose.yaml up -d --no-build portainer
+```
+
+Nếu instance dùng `compose.desktop.yaml` hoặc override khác, tiếp tục chỉ định
+các file override đã dùng trước đó. Các stack và container ứng dụng không cần
+được triển khai lại khi chỉ nâng cấp Portainer. Bật injection và redeploy từng
+stack khi sẵn sàng sử dụng Vault.

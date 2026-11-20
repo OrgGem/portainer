@@ -31,6 +31,9 @@ func NewService(connection portainer.Connection) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := connection.SetServiceName(portainer.VaultConnectionBucket); err != nil {
+		return nil, err
+	}
 
 	s := &Service{
 		connection: connection,

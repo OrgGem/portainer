@@ -2,6 +2,8 @@ import { SchemaOf, object, mixed } from 'yup';
 
 import { validateYAML } from '@/react/docker/stacks/common/stackYamlValidation';
 
+import { readComposeFile } from '../composeServices';
+
 import { UploadFormValues } from './types';
 
 export function getUploadValidationSchema({
@@ -22,7 +24,7 @@ export function getUploadValidationSchema({
 
           let fileContent: string;
           try {
-            fileContent = await value.text();
+            fileContent = await readComposeFile(value);
           } catch {
             return this.createError({ message: 'Unable to read file' });
           }

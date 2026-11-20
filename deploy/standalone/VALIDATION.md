@@ -466,3 +466,25 @@ build-policy feature remains required for Agent environments; it was exercised
 again by the final smoke. No browser acceptance, race-detector run, or unrelated
 Vault/metrics/editor smoke was performed. Production was not redeployed. No
 commit or push was performed.
+
+## Vault deploy-time injection — 2026-11-19
+
+The local source-built image `portainer-custom:2.45.3-vault-deploy`,
+image ID `aad668c5e0cb`, targets `linux/amd64`. Its isolated Docker acceptance
+run completed five scenario groups:
+
+1. TLS and separate environment AppRoles, with KV v2 on local Docker using
+   Editor and KV v1 through the official Portainer Agent using multipart Upload.
+2. Changing a Vault value leaves existing and restarted containers on their
+   original environment until redeployment.
+3. Service-only configuration Apply and Rollback read current Vault values and
+   preserve the other service.
+4. A denied Vault read, including the retry path that normally undeploys first,
+   leaves the active service available.
+5. Repairing the mapping allows deployment to recover after the failed retry.
+
+The frontend run passed 31 tests, with two existing TODO tests. TypeScript and
+focused ESLint checks passed. The Docker acceptance used disposable resources,
+a Vault dev server and synthetic credentials. It does not establish behavior
+against the externally managed production Vault. The user's running Portainer
+instance was excluded from the test and was not replaced.

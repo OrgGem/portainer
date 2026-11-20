@@ -9,6 +9,7 @@ import (
 	"github.com/portainer/portainer/api/dataservices"
 	dockerclient "github.com/portainer/portainer/api/docker/client"
 	k "github.com/portainer/portainer/api/kubernetes"
+	"github.com/portainer/portainer/api/stacks/vaultinject"
 )
 
 type BaseStackDeployer interface {
@@ -64,6 +65,11 @@ func (d *stackDeployer) DeployComposeStack(ctx context.Context, stack *portainer
 	unlock := d.lockComposeDeployment(stack.ID)
 	defer unlock()
 
+	ctx, err := d.PrepareVault(ctx, stack, endpoint)
+	if err != nil {
+		return err
+	}
+
 	options := portainer.ComposeOptions{Registries: registries}
 
 	// --force-recreate doesn't pull updated images
@@ -75,9 +81,14 @@ func (d *stackDeployer) DeployComposeStack(ctx context.Context, stack *portainer
 
 	return d.composeStackManager.Up(ctx, stack, endpoint, portainer.ComposeUpOptions{
 		ComposeOptions: options,
+		VaultEnv:       vaultinject.Environment(ctx),
 		ForceRecreate:  forceRecreate,
 		Prune:          prune,
 	})
+}
+
+func (d *stackDeployer) PrepareVault(ctx context.Context, stack *portainer.Stack, endpoint *portainer.Endpoint) (context.Context, error) {
+	return vaultinject.Prepare(ctx, d.dataStore, stack, endpoint, nil)
 }
 
 func (d *stackDeployer) UndeployComposeStack(ctx context.Context, stack *portainer.Stack, endpoint *portainer.Endpoint) error {

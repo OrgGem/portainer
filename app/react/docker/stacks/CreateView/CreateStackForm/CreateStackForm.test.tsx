@@ -10,6 +10,8 @@ import { withTestRouter } from '@/react/test-utils/withRouter';
 import { withUserProvider } from '@/react/test-utils/withUserProvider';
 import { server } from '@/setup-tests/server';
 import { suppressConsoleLogs } from '@/setup-tests/suppress-console';
+import { EnvironmentType } from '@/react/portainer/environments/types';
+import { createMockEnvironment } from '@/react-tools/test-mocks';
 
 import { CreateStackForm } from './CreateStackForm';
 
@@ -180,6 +182,122 @@ describe('CreateStackForm', () => {
         stackFileContent: expect.stringContaining('version: "3"'),
       });
     });
+  });
+
+  it('submits editor Vault mappings for the first deployment', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.get('/api/endpoints/1', () =>
+        HttpResponse.json(
+          createMockEnvironment({
+            Id: 1,
+            Type: EnvironmentType.Docker,
+            URL: 'unix:///var/run/docker.sock',
+            ComposeSyntaxMaxVersion: '3',
+          })
+        )
+      ),
+      http.post('/api/stacks/create/standalone/string', async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          Id: 123,
+          Name: 'vault-first-deploy',
+          ResourceControl: { Id: 1 },
+        });
+      }),
+      http.put('/api/resource_controls/:id', () =>
+        HttpResponse.json({ success: true })
+      )
+    );
+
+    const user = userEvent.setup();
+    renderComponent();
+
+    await user.type(
+      await screen.findByRole('textbox', { name: /name/i }),
+      'vault-first-deploy'
+    );
+    await user.type(
+      screen.getByTestId('stack-creation-editor'),
+      'services:\n  backend:\n    image: nginx'
+    );
+
+    await user.click(await screen.findByTestId('add-new-vault-mapping'));
+    await user.selectOptions(
+      await screen.findByLabelText('Service'),
+      'backend'
+    );
+    await user.type(
+      screen.getByLabelText('Environment variable'),
+      'DB_PASSWORD'
+    );
+    await user.type(
+      screen.getByLabelText('Vault API path'),
+      'kv/data/apps/backend'
+    );
+    await user.type(screen.getByLabelText('Vault key name'), 'password');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+    const deployButton = screen.getByRole('button', {
+      name: /deploy the stack/i,
+    });
+    expect(deployButton).toBeEnabled();
+    await user.click(deployButton);
+
+    await waitFor(() => expect(requestBody).toBeDefined());
+    expect(requestBody).toMatchObject({
+      name: 'vault-first-deploy',
+      vaultMappings: {
+        InjectOnDeploy: true,
+        Mappings: [
+          {
+            Service: 'backend',
+            Variable: 'DB_PASSWORD',
+            Path: 'kv/data/apps/backend',
+            Key: 'password',
+            Engine: 'kv-v2',
+          },
+        ],
+      },
+    });
+  });
+
+  it('reads the uploaded Compose file to offer services for Vault mappings', async () => {
+    server.use(
+      http.get('/api/endpoints/1', () =>
+        HttpResponse.json(
+          createMockEnvironment({
+            Id: 1,
+            Type: EnvironmentType.Docker,
+            URL: 'unix:///var/run/docker.sock',
+            ComposeSyntaxMaxVersion: '3',
+          })
+        )
+      )
+    );
+
+    const user = userEvent.setup();
+    renderComponent();
+    await user.click(await screen.findByRole('radio', { name: /upload/i }));
+    const file = new File(
+      ['services:\n  backend:\n    image: nginx'],
+      'compose.yaml',
+      { type: 'application/yaml' }
+    );
+    await user.upload(
+      await screen.findByTestId('stack-creation-file-upload-input'),
+      file
+    );
+    expect(screen.getByText('compose.yaml')).toBeVisible();
+
+    await user.click(await screen.findByTestId('add-new-vault-mapping'));
+    const service = await screen.findByLabelText('Service');
+    expect(service).toHaveDisplayValue('Select a service');
+    expect(
+      service.querySelector('option[value="backend"]')
+    ).toBeInTheDocument();
   });
 
   // TODO: update to happydom fixes the issues, but fails other tests

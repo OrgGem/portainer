@@ -11,9 +11,10 @@ GitHub Actions, version tags, GHCR images and the release process.
 - Tùy chỉnh tên, logo, favicon, màu, font và bố cục tại **Settings → Appearance**.
   Xem [hướng dẫn Appearance](../../docs/customization/appearance.md).
 
-- Chính sách build Compose chung: tối đa 50% CPU/RAM mỗi Docker host, mặc định
-  một build/lần, UI tại **Settings → Compose build policy**.
-  Environment qua Agent cần image Agent tùy chỉnh đi kèm để hỗ trợ luồng BuildKit.
+- Chính sách build Compose được quản lý: tối đa 50% CPU/RAM mỗi Docker host,
+  mặc định một build/lần. Tại **Settings → Compose build policy**, admin có thể
+  cho phép host networking khi build hoặc chuyển sang legacy Compose build.
+  Managed build qua Agent cần image Agent tùy chỉnh đi kèm để hỗ trợ luồng BuildKit.
   Xem [hướng dẫn build policy](BUILD-POLICY.md).
 - **Edit text / Save** ngay trong Volume browser, hỗ trợ UTF-8/config/JSON,
   kiểm tra xung đột và giữ bản nháp khi lưu lỗi. Xem [hướng dẫn editor](VOLUME-TEXT-EDITOR.md).
@@ -22,8 +23,8 @@ GitHub Actions, version tags, GHCR images and the release process.
 - Group (Team) với 5 role theo environment: Environment Admin, Operator,
   Helpdesk, Standard và Read-only. Xem [hướng dẫn gán role](ROLES.md).
 - UI ánh xạ Vault theo service/stack và inventory có thống kê, bộ lọc theo
-  environment, stack, tên biến, path và key. Chỉ lưu/hiển thị tham chiếu;
-  xem [hướng dẫn Vault mappings](VAULT-MAPPINGS.md).
+  environment, stack, tên biến, path và key. Portainer đọc giá trị Vault khi
+  deploy nếu đã bật injection; xem [hướng dẫn Vault mappings](VAULT-MAPPINGS.md).
 - Chính sách theo stack, user/team và thao tác: `view`, `config.upload`,
   `config.apply` (bao gồm rollback), `deploy` (start/stop), `edit` (Compose/image).
 - Tab **Configuration & permissions** trong stack Compose tạo bằng editor/upload.
@@ -154,14 +155,10 @@ Upload nhận JSON `{Version, TargetID, Filename, Content}`. Apply/rollback nh�
 
 ## Vault
 
-Ví dụ đầy đủ ở [../vault-example](../vault-example/README.md): Vault Agent chạy
-làm process supervisor ngay trong image ứng dụng. Portainer giữ `DB_HOST` và
-tham chiếu Vault; Agent tự đăng nhập AppRole của ứng dụng rồi cấp `DB_PASSWORD`
-cho tiến trình con. Không lưu giá trị secret trong stack.Env, file upload hoặc
-Docker Config.Env. Tab **Vault mappings** lưu tham chiếu và xuất `env_template`
-theo service để ghép vào `agent.hcl`. Trang **Vault mappings** ở sidebar thống kê
-các tham chiếu đã khai báo. Lưu trên UI chưa tự thay đổi cấu hình runtime;
-triển khai Agent theo [hướng dẫn](VAULT-MAPPINGS.md).
+Global Admin cấu hình kết nối Vault theo environment. Với stack Compose dùng
+Editor hoặc Upload, khai báo ánh xạ tại **Vault mappings** rồi bật đọc Vault khi
+deploy. Portainer lấy giá trị theo path/key và truyền vào env của service tại
+thời điểm triển khai. Xem [hướng dẫn vận hành](VAULT-MAPPINGS.md).
 
 ## Backup và vận hành
 

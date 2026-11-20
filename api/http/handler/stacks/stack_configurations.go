@@ -14,6 +14,7 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/stacks/stackconfig"
+	"github.com/portainer/portainer/api/stacks/vaultinject"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 	"github.com/portainer/portainer/pkg/libhttp/response"
@@ -243,6 +244,13 @@ func (h *Handler) stackConfigApply(w http.ResponseWriter, r *http.Request) *http
 // applyConfigurationRevision records intent before Docker changes and commits the
 // active revision only after a successful deployment. Call with the stack lock held.
 func (h *Handler) applyConfigurationRevision(stack *portainer.Stack, endpoint *portainer.Endpoint, ctx *security.RestrictedRequestContext, idx, targetIdx int, action string, images map[string]string) *httperror.HandlerError {
+	deployCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	var err error
+	deployCtx, err = vaultinject.Prepare(deployCtx, h.DataStore, stack, endpoint, []string{stack.Configuration.Targets[targetIdx].Service})
+	if err != nil {
+		return httperror.InternalServerError("Unable to resolve Vault mappings", err)
+	}
 	config := stack.Configuration
 	id := config.Revisions[idx].ID
 	config.PendingRevision = id
@@ -258,12 +266,14 @@ func (h *Handler) applyConfigurationRevision(stack *portainer.Stack, endpoint *p
 	candidateConfig.Targets = slices.Clone(config.Targets)
 	candidate.Configuration = &candidateConfig
 	candidateConfig.Targets[targetIdx].ActiveRevision = id
-	deployErr := h.deployConfiguration(&candidate, endpoint, images)
+	deployErr := h.deployConfigurationWithContext(deployCtx, &candidate, endpoint, images)
 	if deployErr != nil {
 		appendConfigEvent(config, id, action, ctx.UserID, false)
 		// Compose can fail after replacing a container. Restore its previous mounts
 		// using the same pinned image before reporting the failed apply.
-		recoverErr := h.deployConfiguration(stack, endpoint, images)
+		recoverCtx, recoverCancel := context.WithTimeout(context.WithoutCancel(deployCtx), 2*time.Minute)
+		recoverErr := h.deployConfigurationWithContext(recoverCtx, stack, endpoint, images)
+		recoverCancel()
 		if recoverErr == nil {
 			config.PendingRevision = ""
 			config.PendingImages = nil
@@ -339,7 +349,19 @@ func (h *Handler) stackConfigRecover(w http.ResponseWriter, r *http.Request) *ht
 func (h *Handler) deployConfiguration(stack *portainer.Stack, endpoint *portainer.Endpoint, images map[string]string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	return h.ComposeStackManager.Up(ctx, stack, endpoint, portainer.ComposeUpOptions{ConfigOnly: true, ServiceImages: images, ForceRecreate: true})
+	selected := make([]string, 0, len(images))
+	for service := range images {
+		selected = append(selected, service)
+	}
+	ctx, err := vaultinject.Prepare(ctx, h.DataStore, stack, endpoint, selected)
+	if err != nil {
+		return err
+	}
+	return h.deployConfigurationWithContext(ctx, stack, endpoint, images)
+}
+
+func (h *Handler) deployConfigurationWithContext(ctx context.Context, stack *portainer.Stack, endpoint *portainer.Endpoint, images map[string]string) error {
+	return h.ComposeStackManager.Up(ctx, stack, endpoint, portainer.ComposeUpOptions{ConfigOnly: true, ServiceImages: images, ForceRecreate: true, VaultEnv: vaultinject.Environment(ctx)})
 }
 
 func (h *Handler) runningServiceImages(ctx context.Context, stack *portainer.Stack, endpoint *portainer.Endpoint, service string) (map[string]string, error) {

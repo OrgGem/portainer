@@ -27,6 +27,7 @@ export default class OAuthSettingsController {
     this.onMicrosoftTenantIDChange = this.onMicrosoftTenantIDChange.bind(this);
     this.useDefaultProviderConfiguration = this.useDefaultProviderConfiguration.bind(this);
     this.updateSSO = this.updateSSO.bind(this);
+    this.onChangeHideInternalAuth = this.onChangeHideInternalAuth.bind(this);
     this.addTeamMembershipMapping = this.addTeamMembershipMapping.bind(this);
     this.removeTeamMembership = this.removeTeamMembership.bind(this);
     this.onToggleAutoTeamMembership = this.onToggleAutoTeamMembership.bind(this);
@@ -93,10 +94,6 @@ export default class OAuthSettingsController {
 
   async onChangeHideInternalAuth(checked) {
     this.$async(async () => {
-      if (this.isLimitedToBE) {
-        return;
-      }
-
       if (checked) {
         const confirmed = await confirm({
           title: 'Hide internal authentication prompt',

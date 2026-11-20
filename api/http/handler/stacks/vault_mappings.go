@@ -14,6 +14,7 @@ import (
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/stacks/stackconfig"
 	"github.com/portainer/portainer/api/stacks/stackutils"
+	"github.com/portainer/portainer/api/stacks/vaultinject"
 	"github.com/portainer/portainer/api/stacks/vaultrefs"
 	"github.com/portainer/portainer/pkg/authorization"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
@@ -21,10 +22,11 @@ import (
 )
 
 type vaultStackResponse struct {
-	Configuration portainer.StackVaultMappings `json:"Configuration"`
-	Services      []string                     `json:"Services"`
-	CanEdit       bool                         `json:"CanEdit"`
-	Unavailable   string                       `json:"Unavailable,omitempty"`
+	Configuration      portainer.StackVaultMappings `json:"Configuration"`
+	Services           []string                     `json:"Services"`
+	CanEdit            bool                         `json:"CanEdit"`
+	InjectionSupported bool                         `json:"InjectionSupported"`
+	Unavailable        string                       `json:"Unavailable,omitempty"`
 }
 
 func vaultConfiguration(stack *portainer.Stack) portainer.StackVaultMappings {
@@ -39,7 +41,7 @@ func (h *Handler) stackVaultGet(w http.ResponseWriter, r *http.Request) *httperr
 	if herr != nil {
 		return herr
 	}
-	result := vaultStackResponse{Configuration: vaultConfiguration(stack), Services: []string{}, CanEdit: security.ScopedEnvironmentAdmin(ctx, endpoint.ID)}
+	result := vaultStackResponse{Configuration: vaultConfiguration(stack), Services: []string{}, CanEdit: security.ScopedEnvironmentAdmin(ctx, endpoint.ID), InjectionSupported: vaultinject.SupportedEndpoint(endpoint)}
 	if !ctx.IsAdmin && ctx.StandaloneRole != "" {
 		policy, err := authorization.ReadStandalonePolicy(h.DataStore, ctx.StandaloneRole)
 		if err != nil {
@@ -59,6 +61,7 @@ func (h *Handler) stackVaultGet(w http.ResponseWriter, r *http.Request) *httperr
 }
 
 var errVaultVersion = errors.New("Vault mappings changed; reload before saving")
+var errVaultDeployment = errors.New("wait for the stack deployment or configuration recovery to finish")
 
 func (h *Handler) stackVaultUpdate(w http.ResponseWriter, r *http.Request) *httperror.HandlerError {
 	stack, endpoint, _, ctx, herr := h.loadControlledStack(r)
@@ -72,8 +75,9 @@ func (h *Handler) stackVaultUpdate(w http.ResponseWriter, r *http.Request) *http
 		return httperror.Conflict("Wait for the stack deployment or configuration recovery to finish", nil)
 	}
 	var payload struct {
-		Version  int
-		Mappings []portainer.VaultMapping
+		Version        int
+		Mappings       []portainer.VaultMapping
+		InjectOnDeploy *bool
 	}
 	if err := decodeControlPayload(w, r, &payload, 128*1024); err != nil {
 		return httperror.BadRequest("Expected a version and reference-only mappings; values, tokens and credentials are not accepted", nil)
@@ -105,11 +109,21 @@ func (h *Handler) stackVaultUpdate(w http.ResponseWriter, r *http.Request) *http
 	if err := vaultrefs.Validate(payload.Mappings, validationServices); err != nil {
 		return httperror.BadRequest("Invalid Vault mapping", err)
 	}
-	config := portainer.StackVaultMappings{Version: payload.Version + 1, Mappings: payload.Mappings, UpdatedAt: time.Now().Unix(), UpdatedBy: ctx.UserID}
+	injectOnDeploy := vaultConfiguration(stack).InjectOnDeploy
+	if payload.InjectOnDeploy != nil {
+		injectOnDeploy = *payload.InjectOnDeploy
+	}
+	if injectOnDeploy && !vaultinject.SupportedEndpoint(endpoint) {
+		return httperror.BadRequest("Vault injection requires local Docker or a standard Docker Agent", nil)
+	}
+	config := portainer.StackVaultMappings{Version: payload.Version + 1, Mappings: payload.Mappings, InjectOnDeploy: injectOnDeploy, UpdatedAt: time.Now().Unix(), UpdatedBy: ctx.UserID}
 	err = h.DataStore.UpdateTx(func(tx dataservices.DataStoreTx) error {
 		current, err := tx.Stack().Read(stack.ID)
 		if err != nil {
 			return err
+		}
+		if current.Status == portainer.StackStatusDeploying || (current.Configuration != nil && current.Configuration.PendingRevision != "") {
+			return errVaultDeployment
 		}
 		if vaultConfiguration(current).Version != payload.Version {
 			return errVaultVersion
@@ -119,6 +133,9 @@ func (h *Handler) stackVaultUpdate(w http.ResponseWriter, r *http.Request) *http
 	})
 	if errors.Is(err, errVaultVersion) {
 		return httperror.Conflict(errVaultVersion.Error(), nil)
+	}
+	if errors.Is(err, errVaultDeployment) {
+		return httperror.Conflict(errVaultDeployment.Error(), nil)
 	}
 	if err != nil {
 		return httperror.InternalServerError("Unable to save Vault mappings", err)

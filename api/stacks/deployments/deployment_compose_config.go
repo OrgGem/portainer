@@ -101,3 +101,17 @@ func (config *ComposeStackDeploymentConfig) Undeploy(ctx context.Context) error 
 func (config *ComposeStackDeploymentConfig) GetResponse() string {
 	return ""
 }
+
+// PrepareVault is called before a retry can remove existing containers.
+func (config *ComposeStackDeploymentConfig) PrepareVault(ctx context.Context) (context.Context, error) {
+	if config.stack.VaultMappings == nil || !config.stack.VaultMappings.InjectOnDeploy || len(config.stack.VaultMappings.Mappings) == 0 {
+		return ctx, nil
+	}
+	preparer, ok := config.StackDeployer.(interface {
+		PrepareVault(context.Context, *portainer.Stack, *portainer.Endpoint) (context.Context, error)
+	})
+	if !ok {
+		return ctx, errors.New("Vault deployment is unavailable")
+	}
+	return preparer.PrepareVault(ctx, config.stack, config.endpoint)
+}

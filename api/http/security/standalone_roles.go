@@ -78,13 +78,30 @@ func CheckStandaloneEndpointRole(r *http.Request, store dataservices.DataStoreTx
 	if err != nil {
 		return err
 	}
-	if !StandalonePolicyAllowsRequest(policy, access.Role, r, dockerProxy) {
+	if !StandalonePolicyAllowsRequest(policy, access.Role, r, dockerProxy, endpoint.Type) {
 		return ErrStandaloneRoleDenied
 	}
 	if ctx, err := RetrieveRestrictedRequestContext(r); err == nil {
 		ctx.RoleEndpointID, ctx.StandaloneRole = endpoint.ID, access.Role
 	}
 	return nil
+}
+
+// The UI reads the agent API version from GET /ping after the Docker checks.
+// Match both the endpoint proxy route and the path stripped by the transport.
+func isStandaloneAgentPing(r *http.Request, dockerProxy bool) bool {
+	if r.Method != http.MethodGet || r.Header.Get("Upgrade") != "" || httprequest.ContainsEncodedSeparator(r.URL.EscapedPath()) {
+		return false
+	}
+	if dockerProxy && r.URL.Path == "/ping" {
+		return true
+	}
+	p := r.URL.Path
+	if strings.HasPrefix(p, "/api/endpoints/") {
+		p = strings.TrimPrefix(p, "/api")
+	}
+	prefix := standaloneDockerPrefix.FindStringIndex(p)
+	return prefix != nil && p[prefix[1]:] == "ping"
 }
 
 func StandaloneRoleAllowsRequest(role portainer.StandaloneRole, r *http.Request, dockerProxy bool) bool {

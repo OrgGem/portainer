@@ -108,6 +108,8 @@ func StandaloneRequestFeatures(r *http.Request, dockerProxy bool) []string {
 	return []string{"environment.view"}
 }
 
-func StandalonePolicyAllowsRequest(policy *portainer.StandaloneRolePolicy, role portainer.StandaloneRole, r *http.Request, dockerProxy bool) bool {
-	return StandaloneRoleAllowsRequest(role, r, dockerProxy) && authorization.RoleFeatureAllowed(policy, role, StandaloneRequestFeatures(r, dockerProxy)...)
+func StandalonePolicyAllowsRequest(policy *portainer.StandaloneRolePolicy, role portainer.StandaloneRole, r *http.Request, dockerProxy bool, endpointType portainer.EndpointType) bool {
+	roleAllows := StandaloneRoleAllowsRequest(role, r, dockerProxy) ||
+		(endpointType == portainer.AgentOnDockerEnvironment && isStandaloneAgentPing(r, dockerProxy))
+	return roleAllows && authorization.RoleFeatureAllowed(policy, role, StandaloneRequestFeatures(r, dockerProxy)...)
 }

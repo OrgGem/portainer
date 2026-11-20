@@ -1,5 +1,6 @@
 import { RegistryId } from '@/react/portainer/registries/types/registry';
 import { AccessControlFormData } from '@/react/portainer/access-control/types';
+import { VaultMapping } from '@/react/portainer/vault-mappings/types';
 
 import { EnvVarValues } from '@@/form-components/EnvironmentVariablesFieldset';
 
@@ -17,6 +18,7 @@ export interface BaseFormValues {
   accessControl: AccessControlFormData;
   enableWebhook: boolean;
   registries: Array<RegistryId>;
+  vaultMappings?: VaultMapping[];
 }
 
 export interface FormValues extends BaseFormValues {
