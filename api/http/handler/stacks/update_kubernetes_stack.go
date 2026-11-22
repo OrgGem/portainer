@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/dataservices"
 	"github.com/portainer/portainer/api/dataservices/source"
 	"github.com/portainer/portainer/api/filesystem"
-	gittypes "github.com/portainer/portainer/api/git/types"
 	"github.com/portainer/portainer/api/git/update"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/internal/registryutils"
@@ -30,12 +30,16 @@ type kubernetesFileStackUpdatePayload struct {
 }
 
 type kubernetesGitStackUpdatePayload struct {
-	RepositoryReferenceName  string
-	RepositoryAuthentication bool
-	RepositoryUsername       string
-	RepositoryPassword       string
-	AutoUpdate               *portainer.AutoUpdateSettings
-	TLSSkipVerify            bool
+	SourceID                      portainer.SourceID
+	RepositoryURL                 string
+	RepositoryReferenceName       string
+	RepositoryAuthentication      bool
+	ClearRepositoryAuthentication bool
+	RepositoryUsername            string
+	RepositoryPassword            string
+	AutoUpdate                    *portainer.AutoUpdateSettings
+	ClearAutoUpdate               bool
+	TLSSkipVerify                 *bool
 }
 
 func (payload *kubernetesFileStackUpdatePayload) Validate(r *http.Request) error {
@@ -77,36 +81,31 @@ func (handler *Handler) updateKubernetesStack(tx dataservices.DataStoreTx, r *ht
 			return nil, nil, httperror.BadRequest("Invalid request payload", err)
 		}
 
-		gitConfig.ReferenceName = payload.RepositoryReferenceName
-		gitConfig.TLSSkipVerify = payload.TLSSkipVerify
-		stack.AutoUpdate = payload.AutoUpdate
-
-		if payload.RepositoryAuthentication {
-			password := payload.RepositoryPassword
-			if password == "" && gitConfig.Authentication != nil {
-				password = gitConfig.Authentication.Password
-			}
-
-			gitConfig.Authentication = &gittypes.GitAuthentication{
-				Username: payload.RepositoryUsername,
-				Password: password,
-			}
-
-			if _, err := handler.GitService.LatestCommitID(
-				context.TODO(),
-				gitConfig.URL,
-				gitConfig.ReferenceName,
-				gitConfig.Authentication.Username,
-				gitConfig.Authentication.Password,
-				gitConfig.TLSSkipVerify,
-			); err != nil {
-				return nil, nil, httperror.InternalServerError("Unable to fetch git repository", err)
-			}
-		} else {
-			gitConfig.Authentication = nil
+		targetNewSourceID, _, httpErr := applyStackGitConfigUpdate(
+			r.Context(),
+			handler.GitService,
+			tx,
+			userContext,
+			sourceID,
+			gitConfig,
+			stackGitConfigUpdateInput{
+				SourceID:                      payload.SourceID,
+				RepositoryURL:                 payload.RepositoryURL,
+				RepositoryReferenceName:       payload.RepositoryReferenceName,
+				TLSSkipVerify:                 payload.TLSSkipVerify,
+				RepositoryAuthentication:      payload.RepositoryAuthentication,
+				ClearRepositoryAuthentication: payload.ClearRepositoryAuthentication,
+				RepositoryUsername:            payload.RepositoryUsername,
+				RepositoryPassword:            payload.RepositoryPassword,
+			},
+		)
+		if httpErr != nil {
+			return nil, nil, httpErr
 		}
 
-		if err := saveStackGitConfig(tx, userContext, stack.WorkflowID, stack.ID, sourceID, 0, gitConfig); err != nil {
+		stack.AutoUpdate = resolveAutoUpdate(r, stack.AutoUpdate, payload.AutoUpdate, payload.ClearAutoUpdate)
+
+		if err := saveStackGitConfig(tx, userContext, stack.WorkflowID, stack.ID, sourceID, targetNewSourceID, gitConfig); err != nil {
 			return nil, nil, httperror.InternalServerError("Unable to update source git config", err)
 		}
 
@@ -130,7 +129,7 @@ func (handler *Handler) updateKubernetesStack(tx dataservices.DataStoreTx, r *ht
 		return nil, nil, httperror.InternalServerError("Failed to persist deployment file in a temp directory", err)
 	}
 
-	if payload.StackName != stack.Name {
+	if strings.TrimSpace(payload.StackName) != "" && payload.StackName != stack.Name {
 		stack.Name = payload.StackName
 		if err := tx.Stack().Update(stack.ID, stack); err != nil {
 			return nil, nil, httperror.InternalServerError("Failed to update stack name", err)

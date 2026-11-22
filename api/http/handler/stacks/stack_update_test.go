@@ -475,7 +475,7 @@ func Test_updateSwarmStack_Prune(t *testing.T) {
 
 	payload := &updateSwarmStackPayload{
 		StackFileContent: "version: '3'\nservices:\n  web:\n    image: nginx:latest",
-		Prune:            true,
+		Prune:            new(true),
 	}
 	stack := &portainer.Stack{
 		ID:         1,
@@ -519,7 +519,7 @@ func Test_updateComposeStack_Prune(t *testing.T) {
 
 	payload := &updateComposeStackPayload{
 		StackFileContent: "version: '3'\nservices:\n  web:\n    image: nginx:latest",
-		Prune:            true,
+		Prune:            new(true),
 	}
 	stack := &portainer.Stack{
 		ID:         1,

@@ -34,6 +34,7 @@ type stackGitRedeployPayload struct {
 	// Non-empty value (with RepositoryAuthentication=true) replaces stored credentials; leave blank to keep them.
 	RepositoryPassword string
 	Env                []portainer.Pair
+	ClearEnv           bool
 	Prune              *bool
 	// RepullImageAndRedeploy indicates whether to force repulling images and redeploying the stack
 	RepullImageAndRedeploy bool
@@ -161,9 +162,7 @@ func (handler *Handler) stackGitRedeploy(w http.ResponseWriter, r *http.Request)
 
 	gitConfig.ReferenceName = cmp.Or(payload.RepositoryReferenceName, gitConfig.ReferenceName)
 
-	if payload.Env != nil {
-		stack.Env = payload.Env
-	}
+	stack.Env = resolveStackEnv(r, stack.Env, payload.Env, payload.ClearEnv, true)
 
 	if payload.Prune != nil {
 		if stack.Type == portainer.DockerSwarmStack || stack.Type == portainer.DockerComposeStack {
@@ -409,9 +408,12 @@ func resolveGitAuthFromRedeployPayload(gitConfig *gittypes.RepoConfig, payload s
 		auth = *gitConfig.Authentication
 	}
 
-	// only overload source auth if provided
-	if payload.RepositoryAuthentication && payload.RepositoryPassword != "" {
-		auth.Username = payload.RepositoryUsername
+	// Only overload source auth when a non-empty, non-redacted PAT is provided;
+	// if Username is empty, retain the existing stored Username.
+	if payload.RepositoryAuthentication && isNonEmptyGitCredential(payload.RepositoryPassword) {
+		if isNonEmptyGitCredential(payload.RepositoryUsername) {
+			auth.Username = payload.RepositoryUsername
+		}
 		auth.Password = payload.RepositoryPassword
 	}
 	return auth

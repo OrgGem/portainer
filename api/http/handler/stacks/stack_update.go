@@ -28,10 +28,14 @@ type updateComposeStackPayload struct {
 	StackFileContent string `example:"version: 3\n services:\n web:\n image:nginx"`
 	// A list of environment(endpoint) variables used during stack deployment
 	Env []portainer.Pair
+	// ClearEnv explicitly removes all environment variables when set to true
+	ClearEnv bool
+	// DetachFromGit explicitly confirms detaching a Git-backed stack on token-authenticated API requests
+	DetachFromGit bool
 	// RepullImageAndRedeploy indicates whether to force repulling images and redeploying the stack
 	RepullImageAndRedeploy bool
 	// Prune services that are no longer referenced
-	Prune bool `example:"true"`
+	Prune *bool `example:"true"`
 
 	// Deprecated(2.36): use RepullImageAndRedeploy instead for cleaner responsibility
 	// Force a pulling to current image with the original tag though the image is already the latest
@@ -51,8 +55,12 @@ type updateSwarmStackPayload struct {
 	StackFileContent string `example:"version: 3\n services:\n web:\n image:nginx"`
 	// A list of environment(endpoint) variables used during stack deployment
 	Env []portainer.Pair
+	// ClearEnv explicitly removes all environment variables when set to true
+	ClearEnv bool
+	// DetachFromGit explicitly confirms detaching a Git-backed stack on token-authenticated API requests
+	DetachFromGit bool
 	// Prune services that are no longer referenced
-	Prune bool `example:"true"`
+	Prune *bool `example:"true"`
 	// RepullImageAndRedeploy indicates whether to force repulling images and redeploying the stack
 	RepullImageAndRedeploy bool
 
@@ -256,6 +264,18 @@ func (handler *Handler) updateAndDeployStack(tx dataservices.DataStoreTx, r *htt
 }
 
 func (handler *Handler) updateComposeStack(tx dataservices.DataStoreTx, r *http.Request, stack *portainer.Stack, endpoint *portainer.Endpoint) (deployments.StackDeploymentConfiger, postDeployFunc, *httperror.HandlerError) {
+	var payload updateComposeStackPayload
+	if err := request.DecodeAndValidateJSONPayload(r, &payload); err != nil {
+		return nil, nil, httperror.BadRequest("Invalid request payload", err)
+	}
+
+	if stack.WorkflowID != 0 && isTokenAuthenticatedRequest(r) && !payload.DetachFromGit {
+		return nil, nil, httperror.Conflict(
+			"Stack is managed by a Git source; use PUT /stacks/{id}/git/redeploy to redeploy or set detachFromGit=true to detach from Git",
+			errors.New("refusing to detach git-backed stack without detachFromGit"),
+		)
+	}
+
 	// Must not be git based stack. stop the auto update job if there is any
 	if stack.AutoUpdate != nil {
 		stack.AutoUpdate = nil
@@ -264,13 +284,9 @@ func (handler *Handler) updateComposeStack(tx dataservices.DataStoreTx, r *http.
 		stack.FromAppTemplate = true
 	}
 
-	var payload updateComposeStackPayload
-	if err := request.DecodeAndValidateJSONPayload(r, &payload); err != nil {
-		return nil, nil, httperror.BadRequest("Invalid request payload", err)
-	}
-
 	payload.RepullImageAndRedeploy = payload.RepullImageAndRedeploy || payload.PullImage
-	stack.Env = payload.Env
+	stack.Env = resolveStackEnv(r, stack.Env, payload.Env, payload.ClearEnv, false)
+	prune := resolveStackPrune(stack, payload.Prune)
 
 	if stack.WorkflowID != 0 {
 		oldWorkflowID := stack.WorkflowID
@@ -300,7 +316,7 @@ func (handler *Handler) updateComposeStack(tx dataservices.DataStoreTx, r *http.
 		endpoint,
 		handler.FileService,
 		handler.StackDeployer,
-		payload.Prune,
+		prune,
 		payload.RepullImageAndRedeploy,
 		payload.RepullImageAndRedeploy)
 	if err != nil {
@@ -311,13 +327,7 @@ func (handler *Handler) updateComposeStack(tx dataservices.DataStoreTx, r *http.
 		return nil, nil, httperror.InternalServerError(err.Error(), err)
 	}
 
-	if stack.Option != nil {
-		stack.Option.Prune = payload.Prune
-	} else {
-		stack.Option = &portainer.StackOption{
-			Prune: payload.Prune,
-		}
-	}
+	applyStackPruneOption(stack, prune)
 
 	postDeploy := func(ctx context.Context, deployErr error) {
 		if deployErr != nil {
@@ -336,6 +346,18 @@ func (handler *Handler) updateComposeStack(tx dataservices.DataStoreTx, r *http.
 }
 
 func (handler *Handler) updateSwarmStack(tx dataservices.DataStoreTx, r *http.Request, stack *portainer.Stack, endpoint *portainer.Endpoint) (deployments.StackDeploymentConfiger, postDeployFunc, *httperror.HandlerError) {
+	var payload updateSwarmStackPayload
+	if err := request.DecodeAndValidateJSONPayload(r, &payload); err != nil {
+		return nil, nil, httperror.BadRequest("Invalid request payload", err)
+	}
+
+	if stack.WorkflowID != 0 && isTokenAuthenticatedRequest(r) && !payload.DetachFromGit {
+		return nil, nil, httperror.Conflict(
+			"Stack is managed by a Git source; use PUT /stacks/{id}/git/redeploy to redeploy or set detachFromGit=true to detach from Git",
+			errors.New("refusing to detach git-backed stack without detachFromGit"),
+		)
+	}
+
 	// Must not be git based stack. stop the auto update job if there is any
 	if stack.AutoUpdate != nil {
 		stack.AutoUpdate = nil
@@ -344,12 +366,9 @@ func (handler *Handler) updateSwarmStack(tx dataservices.DataStoreTx, r *http.Re
 		stack.FromAppTemplate = true
 	}
 
-	var payload updateSwarmStackPayload
-	if err := request.DecodeAndValidateJSONPayload(r, &payload); err != nil {
-		return nil, nil, httperror.BadRequest("Invalid request payload", err)
-	}
 	payload.RepullImageAndRedeploy = payload.RepullImageAndRedeploy || payload.PullImage
-	stack.Env = payload.Env
+	stack.Env = resolveStackEnv(r, stack.Env, payload.Env, payload.ClearEnv, false)
+	prune := resolveStackPrune(stack, payload.Prune)
 
 	if stack.WorkflowID != 0 {
 		oldWorkflowID := stack.WorkflowID
@@ -379,7 +398,7 @@ func (handler *Handler) updateSwarmStack(tx dataservices.DataStoreTx, r *http.Re
 		endpoint,
 		handler.FileService,
 		handler.StackDeployer,
-		payload.Prune,
+		prune,
 		payload.RepullImageAndRedeploy)
 	if err != nil {
 		if rollbackErr := handler.FileService.RollbackStackFile(stackFolder, stack.EntryPoint); rollbackErr != nil {
@@ -389,13 +408,7 @@ func (handler *Handler) updateSwarmStack(tx dataservices.DataStoreTx, r *http.Re
 		return nil, nil, httperror.InternalServerError(err.Error(), err)
 	}
 
-	if stack.Option != nil {
-		stack.Option.Prune = payload.Prune
-	} else {
-		stack.Option = &portainer.StackOption{
-			Prune: payload.Prune,
-		}
-	}
+	applyStackPruneOption(stack, prune)
 
 	postDeploy := func(ctx context.Context, deployErr error) {
 		if deployErr != nil {

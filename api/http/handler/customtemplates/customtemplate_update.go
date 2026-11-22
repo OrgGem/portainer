@@ -1,11 +1,13 @@
 package customtemplates
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/dataservices"
@@ -173,17 +175,44 @@ func (handler *Handler) customTemplateUpdate(w http.ResponseWriter, r *http.Requ
 		return httperror.Forbidden("Access denied to resource", httperrors.ErrResourceAccessDenied)
 	}
 
+	isTokenReq := r.Header.Get(portainer.APIKeyHeader) != "" || r.Header.Get("Authorization") != ""
+
 	customTemplate.Title = payload.Title
-	customTemplate.Logo = payload.Logo
+	if isTokenReq {
+		customTemplate.Logo = cmp.Or(payload.Logo, customTemplate.Logo)
+		customTemplate.Note = cmp.Or(payload.Note, customTemplate.Note)
+		if len(payload.Variables) > 0 {
+			customTemplate.Variables = payload.Variables
+		}
+	} else {
+		customTemplate.Logo = payload.Logo
+		customTemplate.Note = payload.Note
+		customTemplate.Variables = payload.Variables
+	}
 	customTemplate.Description = payload.Description
-	customTemplate.Note = payload.Note
 	customTemplate.Platform = payload.Platform
 	customTemplate.Type = payload.Type
-	customTemplate.Variables = payload.Variables
 	customTemplate.IsComposeFormat = payload.IsComposeFormat
 	customTemplate.EdgeTemplate = payload.EdgeTemplate
 
 	userContext := source.NewUserContext(securityContext.User, securityContext.UserMemberships)
+
+	// If PAT or Username is empty when updating an existing Git-backed template without SourceID,
+	// default to the existing stored Source so credentials are never overwritten with empty values.
+	hasNonEmptyPass := strings.TrimSpace(payload.RepositoryPassword) != "" && payload.RepositoryPassword != "[REDACTED]"
+	hasNonEmptyUser := strings.TrimSpace(payload.RepositoryUsername) != "" && payload.RepositoryUsername != "[REDACTED]"
+	if payload.SourceID == 0 && len(payload.FileContent) == 0 && (!hasNonEmptyPass || !hasNonEmptyUser) &&
+		customTemplate.Artifact != nil && len(customTemplate.Artifact.Files) > 0 {
+		existingFile := customTemplate.Artifact.Files[0]
+		if existingSrc, readErr := handler.DataStore.Source().Read(userContext, existingFile.SourceID); readErr == nil && existingSrc != nil && existingSrc.Git != nil {
+			normExisting, errE := gittypes.NormalizeURL(existingSrc.Git.URL)
+			normIncoming, errI := gittypes.NormalizeURL(payload.RepositoryURL)
+			if payload.RepositoryURL == "" || (errE == nil && errI == nil && normExisting == normIncoming) {
+				payload.SourceID = existingSrc.ID
+				payload.RepositoryReferenceName = cmp.Or(payload.RepositoryReferenceName, existingFile.Ref)
+			}
+		}
+	}
 
 	if payload.SourceID != 0 || payload.RepositoryURL != "" {
 		gitConfig, httpErr := sources.ResolveRepoConfig(handler.DataStore, userContext, sources.RepoConfigInput{

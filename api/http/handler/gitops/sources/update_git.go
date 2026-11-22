@@ -18,17 +18,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const redactedSecretPlaceholder = "[REDACTED]"
+
 var (
 	ErrNotGitSource = errors.New("source is not a Git source")
 )
 
 // GitSourceUpdatePayload holds the parameters for updating a git-backed source
 type GitSourceUpdatePayload struct {
-	Name           *string                         `json:"name"`
-	URL            *string                         `json:"url"`
-	TLSSkipVerify  *bool                           `json:"tlsSkipVerify"`
-	Authentication *GitAuthenticationUpdatePayload `json:"authentication"`
-	Interval       *string                         `json:"interval"`
+	Name                *string                         `json:"name"`
+	URL                 *string                         `json:"url"`
+	TLSSkipVerify       *bool                           `json:"tlsSkipVerify"`
+	Authentication      *GitAuthenticationUpdatePayload `json:"authentication"`
+	ClearAuthentication bool                            `json:"clearAuthentication,omitempty"`
+	Interval            *string                         `json:"interval"`
 }
 
 type GitAuthenticationUpdatePayload struct {
@@ -87,6 +90,39 @@ func (h *Handler) gitSourceUpdate(w http.ResponseWriter, r *http.Request) *httpe
 	sourceID := portainer.SourceID(id)
 	userContext := source.NewUserContext(securityContext.User, securityContext.UserMemberships)
 
+	patProvided := payload.Authentication != nil && isNonEmptyCredential(payload.Authentication.Password)
+	preVerifiedConnection := false
+
+	// When a non-empty PAT is provided, verify connectivity against the Git repository
+	// BEFORE overwriting the stored Source credentials in the database.
+	if patProvided && h.gitService != nil {
+		var existingSrc *portainer.Source
+		if err := h.dataStore.ViewTx(func(tx dataservices.DataStoreTx) error {
+			var readErr error
+			existingSrc, readErr = tx.Source().Read(userContext, sourceID)
+			return readErr
+		}); h.dataStore.IsErrObjectNotFound(err) {
+			return httperror.NotFound("Unable to find a source with the specified identifier", err)
+		} else if errors.Is(err, source.ErrNotEnoughPermission) {
+			return httperror.Forbidden("Not enough permissions to update source", err)
+		} else if err != nil {
+			return httperror.InternalServerError("Unable to read source", err)
+		}
+
+		candidate := cloneSource(existingSrc)
+		if err := ApplyGitSourceChangesWithRequest(r, candidate, payload); errors.Is(err, ErrNotGitSource) {
+			return httperror.BadRequest("Source is not a Git source", err)
+		} else if err != nil {
+			return httperror.InternalServerError("Unable to apply source changes", err)
+		}
+
+		connResult := testSourceConnection(r.Context(), h.gitService, candidate.Git)
+		if !connResult.Success {
+			return httperror.BadRequest("Unable to connect to Git repository with provided credentials: "+connResult.Error, errors.New(connResult.Error))
+		}
+		preVerifiedConnection = true
+	}
+
 	var src *portainer.Source
 
 	if err := h.dataStore.UpdateTx(func(tx dataservices.DataStoreTx) error {
@@ -96,12 +132,17 @@ func (h *Handler) gitSourceUpdate(w http.ResponseWriter, r *http.Request) *httpe
 			return err
 		}
 
-		if err := ApplyGitSourceChanges(src, payload); err != nil {
+		if err := ApplyGitSourceChangesWithRequest(r, src, payload); err != nil {
 			return err
 		}
 
-		src.Status = portainer.SourceStatusUnknown
-		src.StatusError = ""
+		if preVerifiedConnection {
+			src.Status = portainer.SourceStatusHealthy
+			src.StatusError = ""
+		} else {
+			src.Status = portainer.SourceStatusUnknown
+			src.StatusError = ""
+		}
 
 		return tx.Source().Update(userContext, src.ID, src)
 	}); h.dataStore.IsErrObjectNotFound(err) {
@@ -116,8 +157,10 @@ func (h *Handler) gitSourceUpdate(w http.ResponseWriter, r *http.Request) *httpe
 		return httperror.InternalServerError("Unable to update source", err)
 	}
 
-	if src, err = h.testAndSaveSourceConnection(r.Context(), userContext, src); err != nil {
-		return httperror.InternalServerError("Unable to persist source status", err)
+	if !preVerifiedConnection {
+		if src, err = h.testAndSaveSourceConnection(r.Context(), userContext, src); err != nil {
+			return httperror.InternalServerError("Unable to persist source status", err)
+		}
 	}
 
 	if err := h.sourceScheduler.Reconcile(src.ID); err != nil {
@@ -131,8 +174,19 @@ func (h *Handler) gitSourceUpdate(w http.ResponseWriter, r *http.Request) *httpe
 
 // ApplyGitSourceChanges applies the payload changes to the source in place
 func ApplyGitSourceChanges(src *portainer.Source, payload GitSourceUpdatePayload) error {
+	return ApplyGitSourceChangesWithRequest(nil, src, payload)
+}
+
+// ApplyGitSourceChangesWithRequest applies payload changes while protecting token-authenticated
+// API/MCP requests from accidentally clearing stored credentials with an empty authentication object.
+func ApplyGitSourceChangesWithRequest(r *http.Request, src *portainer.Source, payload GitSourceUpdatePayload) error {
 	if err := ApplyBaseGitSourceChanges(src, payload); err != nil {
 		return err
+	}
+
+	if payload.ClearAuthentication {
+		src.Git.Authentication = nil
+		return nil
 	}
 
 	if payload.Authentication == nil {
@@ -140,6 +194,9 @@ func ApplyGitSourceChanges(src *portainer.Source, payload GitSourceUpdatePayload
 	}
 
 	if *payload.Authentication == (GitAuthenticationUpdatePayload{}) {
+		if isTokenAuthenticatedRequest(r) {
+			return nil
+		}
 		src.Git.Authentication = nil
 		return nil
 	}
@@ -180,21 +237,61 @@ func ApplyBaseGitSourceChanges(src *portainer.Source, payload GitSourceUpdatePay
 }
 
 // ApplyAuthChanges returns a copy of the existing authentication (or a fresh
-// one) with the basic credential changes applied.
+// one when a non-empty PAT is supplied) without ever overwriting stored
+// Username or Password with empty or redacted values.
 func ApplyAuthChanges(existing *gittypes.GitAuthentication, payload GitAuthenticationUpdatePayload) *gittypes.GitAuthentication {
-	auth := &gittypes.GitAuthentication{}
+	hasUser := isNonEmptyCredential(payload.Username)
+	hasPass := isNonEmptyCredential(payload.Password)
+
 	if existing != nil {
 		copied := *existing
-		auth = &copied
+		if hasUser {
+			copied.Username = *payload.Username
+		}
+		if hasPass {
+			copied.Password = *payload.Password
+		}
+		return &copied
 	}
 
-	if payload.Username != nil {
+	if !hasPass {
+		return nil
+	}
+
+	auth := &gittypes.GitAuthentication{
+		Password: *payload.Password,
+	}
+	if hasUser {
 		auth.Username = *payload.Username
 	}
 
-	if payload.Password != nil {
-		auth.Password = *payload.Password
+	return auth
+}
+
+func isNonEmptyCredential(val *string) bool {
+	return val != nil && strings.TrimSpace(*val) != "" && *val != redactedSecretPlaceholder
+}
+
+func isTokenAuthenticatedRequest(r *http.Request) bool {
+	if r == nil {
+		return false
 	}
 
-	return auth
+	return r.Header.Get(portainer.APIKeyHeader) != "" || r.Header.Get("Authorization") != ""
+}
+
+func cloneSource(src *portainer.Source) *portainer.Source {
+	if src == nil {
+		return nil
+	}
+	copied := *src
+	if src.Git != nil {
+		gitCopy := *src.Git
+		if src.Git.Authentication != nil {
+			authCopy := *src.Git.Authentication
+			gitCopy.Authentication = &authCopy
+		}
+		copied.Git = &gitCopy
+	}
+	return &copied
 }

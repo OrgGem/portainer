@@ -2,7 +2,6 @@ package stacks
 
 import (
 	"cmp"
-	"context"
 	"net/http"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/portainer/portainer/api/dataservices/source"
 	gittypes "github.com/portainer/portainer/api/git/types"
 	"github.com/portainer/portainer/api/git/update"
-	"github.com/portainer/portainer/api/gitops/sources"
 	httperrors "github.com/portainer/portainer/api/http/errors"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/stacks/stackutils"
@@ -25,10 +23,13 @@ import (
 
 type stackGitUpdatePayload struct {
 	AutoUpdate              *portainer.AutoUpdateSettings
+	ClearAutoUpdate         bool
 	Env                     []portainer.Pair
-	Prune                   bool
+	ClearEnv                bool
+	Prune                   *bool
 	ConfigFilePath          string
 	AdditionalFiles         []string
+	ClearAdditionalFiles    bool
 	RepositoryReferenceName string
 	// SourceID references an existing Source for git credentials/URL.
 	// When set, the inline URL and authentication fields are ignored.
@@ -36,13 +37,14 @@ type stackGitUpdatePayload struct {
 	// Deprecated: use SourceID instead. URL of a Git repository hosting the Stack file.
 	RepositoryURL string
 	// Deprecated: use SourceID instead. Use basic authentication to clone the Git repository.
-	RepositoryAuthentication bool
+	RepositoryAuthentication      bool
+	ClearRepositoryAuthentication bool
 	// Deprecated: use SourceID instead. Username used in basic authentication.
 	RepositoryUsername string
 	// Deprecated: use SourceID instead. Password used in basic authentication.
 	RepositoryPassword string
 	// Deprecated: use SourceID instead. Skip TLS verification when cloning the Git repository.
-	TLSSkipVerify bool
+	TLSSkipVerify *bool
 }
 
 func (payload *stackGitUpdatePayload) Validate(r *http.Request) error {
@@ -179,75 +181,40 @@ func (handler *Handler) stackUpdateGit(w http.ResponseWriter, r *http.Request) *
 		}
 	}
 
-	// Update gitConfig based on payload; the updated config is saved to Source (not stack.GitConfig).
-	gitConfig.ReferenceName = payload.RepositoryReferenceName
-	if payload.ConfigFilePath != "" {
-		gitConfig.ConfigFilePath = payload.ConfigFilePath
-	}
-	if payload.AdditionalFiles != nil {
-		stack.AdditionalFiles = payload.AdditionalFiles
+	userContext := source.NewUserContext(securityContext.User, securityContext.UserMemberships)
+
+	targetNewSourceID, effectiveSourceID, httpErr := applyStackGitConfigUpdate(
+		r.Context(),
+		handler.GitService,
+		handler.DataStore,
+		userContext,
+		sourceID,
+		gitConfig,
+		stackGitConfigUpdateInput{
+			SourceID:                      payload.SourceID,
+			RepositoryURL:                 payload.RepositoryURL,
+			RepositoryReferenceName:       payload.RepositoryReferenceName,
+			ConfigFilePath:                payload.ConfigFilePath,
+			TLSSkipVerify:                 payload.TLSSkipVerify,
+			RepositoryAuthentication:      payload.RepositoryAuthentication,
+			ClearRepositoryAuthentication: payload.ClearRepositoryAuthentication,
+			RepositoryUsername:            payload.RepositoryUsername,
+			RepositoryPassword:            payload.RepositoryPassword,
+		},
+	)
+	if httpErr != nil {
+		return httpErr
 	}
 
+	stack.AdditionalFiles = resolveAdditionalFiles(r, stack.AdditionalFiles, payload.AdditionalFiles, payload.ClearAdditionalFiles)
 	stack.EntryPoint = cmp.Or(payload.ConfigFilePath, stack.EntryPoint)
-
-	stack.AutoUpdate = payload.AutoUpdate
-	stack.Env = payload.Env
+	stack.AutoUpdate = resolveAutoUpdate(r, stack.AutoUpdate, payload.AutoUpdate, payload.ClearAutoUpdate)
+	stack.Env = resolveStackEnv(r, stack.Env, payload.Env, payload.ClearEnv, false)
 	stack.UpdatedBy = user.Username
 	stack.UpdateDate = time.Now().Unix()
 
-	if stack.Type == portainer.DockerSwarmStack {
-		stack.Option = &portainer.StackOption{Prune: payload.Prune}
-	}
-
-	userContext := source.NewUserContext(securityContext.User, securityContext.UserMemberships)
-
-	if payload.SourceID != 0 {
-		src, httpErr := sources.ValidateGitSourceAccess(handler.DataStore, userContext, payload.SourceID)
-		if httpErr != nil {
-			return httpErr
-		}
-
-		if src.Git == nil {
-			return httperror.BadRequest("Source has no git configuration", errors.New("source has no git config"))
-		}
-	} else {
-		gitConfig.TLSSkipVerify = payload.TLSSkipVerify
-		if payload.RepositoryURL != "" {
-			gitConfig.URL = payload.RepositoryURL
-		}
-
-		if payload.RepositoryAuthentication {
-			password := payload.RepositoryPassword
-
-			// When the existing stack is using the custom username/password and the password is not updated,
-			// the stack should keep using the saved username/password
-			if password == "" && gitConfig.Authentication != nil {
-				password = gitConfig.Authentication.Password
-			}
-
-			gitConfig.Authentication = &gittypes.GitAuthentication{
-				Username: payload.RepositoryUsername,
-				Password: password,
-			}
-
-			if _, err := handler.GitService.LatestCommitID(
-				context.TODO(),
-				gitConfig.URL,
-				gitConfig.ReferenceName,
-				gitConfig.Authentication.Username,
-				gitConfig.Authentication.Password,
-				gitConfig.TLSSkipVerify,
-			); err != nil {
-				return httperror.InternalServerError("Unable to fetch git repository", err)
-			}
-		} else {
-			gitConfig.Authentication = nil
-		}
-	}
-
-	effectiveSourceID := sourceID
-	if payload.SourceID != 0 {
-		effectiveSourceID = payload.SourceID
+	if stack.Type == portainer.DockerSwarmStack || stack.Type == portainer.DockerComposeStack {
+		applyStackPruneOption(stack, resolveStackPrune(stack, payload.Prune))
 	}
 
 	var resp *stackResponse
@@ -258,7 +225,7 @@ func (handler *Handler) stackUpdateGit(w http.ResponseWriter, r *http.Request) *
 
 		uc := source.NewUserContext(securityContext.User, securityContext.UserMemberships)
 
-		if err := saveStackGitConfig(tx, uc, stack.WorkflowID, stack.ID, sourceID, payload.SourceID, gitConfig); err != nil {
+		if err := saveStackGitConfig(tx, uc, stack.WorkflowID, stack.ID, sourceID, targetNewSourceID, gitConfig); err != nil {
 			return err
 		}
 
