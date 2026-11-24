@@ -43,7 +43,7 @@ func (s *Service) GetAuthorizationToken(ctx context.Context) (token *string, exp
 	return
 }
 
-func (s *Service) ParseAuthorizationToken(token string) (username string, password string, err error) {
+func ParseAuthorizationToken(token string) (username string, password string, err error) {
 	if len(token) == 0 {
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/aws/ecr"
 	httperrors "github.com/portainer/portainer/api/http/errors"
 	"github.com/portainer/portainer/api/http/security"
 	libhelmcache "github.com/portainer/portainer/pkg/libhelm/cache"
@@ -42,10 +43,7 @@ func (payload *registryConfigurePayload) Validate(r *http.Request) error {
 	payload.Authentication = useAuthentication
 
 	if useAuthentication {
-		username, err := request.RetrieveMultiPartFormValue(r, "Username", false)
-		if err != nil {
-			return errors.New("invalid username")
-		}
+		username, _ := request.RetrieveMultiPartFormValue(r, "Username", true)
 		payload.Username = username
 
 		password, _ := request.RetrieveMultiPartFormValue(r, "Password", true)
@@ -136,14 +134,25 @@ func (handler *Handler) registryConfigure(w http.ResponseWriter, r *http.Request
 	if payload.Authentication {
 		registry.Authentication = true
 
-		registry.Username = payload.Username
-
-		if payload.Password != "" {
-			registry.Password = payload.Password
+		if !registry.Ecr.UseIAMRole {
+			if payload.Username == "" {
+				return httperror.BadRequest("Invalid registry username", nil)
+			}
+			registry.Username = payload.Username
+			if payload.Password != "" {
+				registry.Password = payload.Password
+			}
 		}
 
-		if payload.Region != "" {
+		if payload.Region != "" && payload.Region != registry.Ecr.Region {
+			registry.AccessToken, registry.AccessTokenExpiry = "", 0
 			registry.Ecr.Region = payload.Region
+		}
+	}
+
+	if registry.Ecr.UseIAMRole {
+		if err := ecr.ValidateRoleRegistry(registry.URL, registry.Ecr.Region); err != nil {
+			return httperror.BadRequest("Invalid ECR configuration", err)
 		}
 	}
 

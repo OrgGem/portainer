@@ -50,8 +50,11 @@ export default class RegistryController {
     return this.$async(async () => {
       try {
         this.state.actionInProgress = true;
-        const registry = this.registry;
-        registry.Password = this.Password;
+        const registry = { ...this.registry, Password: this.Password };
+        if (registry.Type === RegistryTypes.ECR && registry.Ecr.UseIAMRole) {
+          delete registry.Username;
+          delete registry.Password;
+        }
 
         await this.RegistryService.updateRegistry(registry);
         this.Notifications.success('Success', 'Registry successfully updated');
@@ -105,6 +108,7 @@ export default class RegistryController {
       const registryId = this.$state.params.id;
       const registry = await this.RegistryService.registry(registryId);
       this.registry = registry;
+      this.hasStoredEcrKey = registry.Type === RegistryTypes.ECR && registry.Authentication && !registry.Ecr.UseIAMRole;
       this.provider = this.getRegistryProvider(registry.Type);
 
       const registries = await this.RegistryService.registries();

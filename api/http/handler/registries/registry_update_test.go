@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	portainer "github.com/portainer/portainer/api"
@@ -60,4 +61,52 @@ func TestHandler_registryUpdate(t *testing.T) {
 	assert.Equal(t, *payload.Authentication, updatedRegistry.Authentication)
 	assert.Equal(t, *payload.Username, updatedRegistry.Username)
 	assert.Empty(t, updatedRegistry.Password)
+}
+
+func TestECRRoleLifecycle(t *testing.T) {
+	handler, store := newTestHandler(t)
+	request := func(method, path, body string, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r = r.WithContext(security.StoreRestrictedRequestContext(r, &security.RestrictedRequestContext{IsAdmin: true, UserID: 1}))
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		require.Equal(t, status, w.Code, w.Body.String())
+		return w
+	}
+	request("POST", "/registries", `{"Name":"shared","Type":7,"URL":"123456789012.dkr.ecr.us-east-1.amazonaws.com","Authentication":true,"Ecr":{"Region":"us-east-1","UseIAMRole":true}}`, 200)
+	load := func() *portainer.Registry {
+		r, err := store.Registry().Read(1)
+		require.NoError(t, err)
+		return r
+	}
+	reg := load()
+	require.True(t, reg.Ecr.UseIAMRole)
+	reg.AccessToken, reg.AccessTokenExpiry = "AWS:cached-password", 12345
+	require.NoError(t, store.Registry().Update(1, reg))
+
+	w := request("PUT", "/registries/1", `{"Name":"renamed","Ecr":{"Region":"us-east-1"}}`, 200)
+	require.NotContains(t, w.Body.String(), "cached-password")
+	require.True(t, load().Ecr.UseIAMRole)
+	require.Equal(t, reg.AccessToken, load().AccessToken)
+	request("PUT", "/registries/1", `{"Ecr":{"UseIAMRole":false}}`, 400)
+	require.True(t, load().Ecr.UseIAMRole)
+	request("PUT", "/registries/1", `{"Username":"key","Password":"secret","Ecr":{"UseIAMRole":false}}`, 200)
+	reg = load()
+	require.False(t, reg.Ecr.UseIAMRole)
+	require.Equal(t, "secret", reg.Password)
+	require.Empty(t, reg.AccessToken)
+	reg.AccessToken, reg.AccessTokenExpiry = "AWS:from-static-key", 12345
+	require.NoError(t, store.Registry().Update(1, reg))
+	request("PUT", "/registries/1", `{"Ecr":{"UseIAMRole":true}}`, 200)
+	reg = load()
+	require.True(t, reg.Ecr.UseIAMRole)
+	require.Empty(t, reg.Username)
+	require.Empty(t, reg.Password)
+	require.Empty(t, reg.ManagementConfiguration.Password)
+	require.Empty(t, reg.AccessToken)
+	require.Zero(t, reg.AccessTokenExpiry)
+	request("PUT", "/registries/1", `{"URL":"example.com"}`, 400)
+	request("PUT", "/registries/1", `{"Authentication":false}`, 200)
+	require.False(t, load().Ecr.UseIAMRole)
 }

@@ -64,7 +64,7 @@ export function RegistryCreateRequest(model) {
   if (!isHttp) {
     this.TLS = true;
   }
-  if (model.Authentication) {
+  if (model.Authentication && !(model.Type === RegistryTypes.ECR && model.Ecr.UseIAMRole)) {
     this.Username = model.Username;
     this.Password = model.Password;
   }
@@ -76,7 +76,7 @@ export function RegistryCreateRequest(model) {
     };
   }
   if (model.Type === RegistryTypes.ECR) {
-    this.Ecr = model.Ecr;
+    this.Ecr = { ...model.Ecr, UseIAMRole: model.Authentication && !!model.Ecr.UseIAMRole };
   }
   if (model.Type === RegistryTypes.QUAY) {
     this.Quay = {

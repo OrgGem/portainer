@@ -985,6 +985,7 @@ export const zPortainerDockerSnapshotRaw = z.record(z.string(), z.unknown());
 
 export const zPortainerEcrData = z.object({
   Region: z.string().optional(),
+  UseIAMRole: z.boolean().optional(),
 });
 
 export const zPortainerEdge = z.object({

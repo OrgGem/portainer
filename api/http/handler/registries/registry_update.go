@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/aws/ecr"
 	httperrors "github.com/portainer/portainer/api/http/errors"
 	"github.com/portainer/portainer/api/http/security"
 	"github.com/portainer/portainer/api/internal/endpointutils"
@@ -26,16 +27,19 @@ type registryUpdatePayload struct {
 	BaseURL *string `json:",omitempty" example:"registry.mydomain.tld:2375"`
 	// Is authentication against this registry enabled
 	Authentication *bool `example:"false" validate:"required"`
-	// Username used to authenticate against this registry. Required when Authentication is true
+	// Username for registry authentication with explicit credentials.
 	Username *string `example:"registry_user"`
-	// Password used to authenticate against this registry. required when Authentication is true
+	// Password for registry authentication with explicit credentials.
 	Password *string `example:"registry_password"`
 	// Quay data
 	Quay *portainer.QuayRegistryData
 	// Registry access control
 	RegistryAccesses *portainer.RegistryAccesses `json:",omitempty"`
 	// ECR data
-	Ecr *portainer.EcrData `json:",omitempty"`
+	Ecr *struct {
+		Region     string
+		UseIAMRole *bool
+	} `json:",omitempty"`
 }
 
 func (payload *registryUpdatePayload) Validate(r *http.Request) error {
@@ -107,39 +111,46 @@ func (handler *Handler) registryUpdate(w http.ResponseWriter, r *http.Request) *
 		registry.BaseURL = *payload.BaseURL
 	}
 
-	shouldUpdateSecrets := false
-
+	previousEcr := registry.Ecr
+	previousUsername, previousPassword := registry.Username, registry.Password
+	previousAuth := registry.Authentication
 	if payload.Authentication != nil {
-		shouldUpdateSecrets = shouldUpdateSecrets || (registry.Authentication != *payload.Authentication)
-
-		if *payload.Authentication {
-			registry.Authentication = true
-
-			if payload.Username != nil {
-				shouldUpdateSecrets = shouldUpdateSecrets || (registry.Username != *payload.Username)
-				registry.Username = *payload.Username
-			}
-
-			if payload.Password != nil && *payload.Password != "" {
-				shouldUpdateSecrets = shouldUpdateSecrets || (registry.Password != *payload.Password)
-				registry.Password = *payload.Password
-			}
-
-			if registry.Type == portainer.EcrRegistry && payload.Ecr != nil && payload.Ecr.Region != "" {
-				shouldUpdateSecrets = shouldUpdateSecrets || (registry.Ecr.Region != payload.Ecr.Region)
+		registry.Authentication = *payload.Authentication
+	}
+	if payload.Ecr != nil && payload.Ecr.UseIAMRole != nil && *payload.Ecr.UseIAMRole && registry.Type != portainer.EcrRegistry {
+		return httperror.BadRequest("IAM role authentication requires an authenticated ECR registry", nil)
+	}
+	if registry.Authentication {
+		if payload.Ecr != nil && registry.Type == portainer.EcrRegistry {
+			if payload.Ecr.Region != "" {
 				registry.Ecr.Region = payload.Ecr.Region
 			}
-		} else {
-			registry.Authentication = false
-			registry.Username = ""
-			registry.Password = ""
-
-			registry.Ecr.Region = ""
-
-			registry.AccessToken = ""
-			registry.AccessTokenExpiry = 0
+			if payload.Ecr.UseIAMRole != nil {
+				registry.Ecr.UseIAMRole = *payload.Ecr.UseIAMRole
+			}
 		}
+		if registry.Ecr.UseIAMRole {
+			registry.Username, registry.Password = "", ""
+		} else if payload.Authentication != nil || (registry.Type == portainer.EcrRegistry && payload.Ecr != nil) {
+			if payload.Username != nil {
+				registry.Username = *payload.Username
+			}
+			if payload.Password != nil && *payload.Password != "" {
+				registry.Password = *payload.Password
+			}
+		}
+		if registry.Type == portainer.EcrRegistry {
+			if registry.Ecr.Region == "" || (!registry.Ecr.UseIAMRole && (registry.Username == "" || registry.Password == "")) {
+				return httperror.BadRequest("ECR requires a region and either IAM role authentication or access keys", nil)
+			}
+		}
+	} else if payload.Authentication != nil {
+		registry.Username, registry.Password = "", ""
+		registry.Ecr = portainer.EcrData{}
+		registry.AccessToken, registry.AccessTokenExpiry = "", 0
 	}
+	shouldUpdateSecrets := previousAuth != registry.Authentication || previousEcr != registry.Ecr ||
+		previousUsername != registry.Username || previousPassword != registry.Password
 
 	registry.ManagementConfiguration = syncConfig(registry)
 
@@ -152,6 +163,12 @@ func (handler *Handler) registryUpdate(w http.ResponseWriter, r *http.Request) *
 			if r.ID != registry.ID && handler.registriesHaveSameURLAndCredentials(&r, registry) {
 				return httperror.Conflict("Another registry with the same URL and credentials already exists", errors.New("a registry is already defined for this URL and credentials"))
 			}
+		}
+	}
+
+	if registry.Ecr.UseIAMRole {
+		if err := ecr.ValidateRoleRegistry(registry.URL, registry.Ecr.Region); err != nil {
+			return httperror.BadRequest("Invalid ECR configuration", err)
 		}
 	}
 

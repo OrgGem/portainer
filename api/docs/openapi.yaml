@@ -15896,6 +15896,8 @@ components:
         Region:
           example: ap-southeast-2
           type: string
+        UseIAMRole:
+          type: boolean
       type: object
     portainer.Edge:
       properties:
@@ -17964,8 +17966,7 @@ components:
           example: my-registry
           type: string
         Password:
-          description: Password used to authenticate against this registry. required when
-            Authentication is true
+          description: Password for registry authentication with explicit credentials.
           example: registry_password
           type: string
         Quay:
@@ -18002,8 +18003,7 @@ components:
           example: registry.mydomain.tld:2375/feed
           type: string
         Username:
-          description: Username used to authenticate against this registry. Required when
-            Authentication is true
+          description: Username for registry authentication with explicit credentials.
           example: registry_user
           type: string
       required:
@@ -18087,8 +18087,7 @@ components:
           example: my-registry
           type: string
         Password:
-          description: Password used to authenticate against this registry. required when
-            Authentication is true
+          description: Password for registry authentication with explicit credentials.
           example: registry_password
           type: string
         Quay:
@@ -18104,8 +18103,7 @@ components:
           example: registry.mydomain.tld:2375
           type: string
         Username:
-          description: Username used to authenticate against this registry. Required when
-            Authentication is true
+          description: Username for registry authentication with explicit credentials.
           example: registry_user
           type: string
       required:

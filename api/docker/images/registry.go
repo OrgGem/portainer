@@ -109,6 +109,13 @@ func findBestMatchRegistry(repository string, registries []portainer.Registry) (
 	var match1, match2, match3 *portainer.Registry
 
 	for _, registry := range registries {
+		if registry.Ecr.UseIAMRole {
+			host := strings.TrimSuffix(strings.TrimPrefix(registry.URL, "https://"), "/")
+			if strings.HasPrefix(repository, host+"/") {
+				match2 = &registry
+			}
+			continue
+		}
 		if strings.Contains(repository, registry.URL) {
 			match2 = &registry
 		}
@@ -137,7 +144,10 @@ func findBestMatchRegistry(repository string, registries []portainer.Registry) (
 		return nil, errors.New("no registries matched")
 	}
 
-	registriesCache.Set(repository, *match, 0)
+	// ECR token refresh must use the current authentication mode and credentials.
+	if match.Type != portainer.EcrRegistry {
+		registriesCache.Set(repository, *match, 0)
+	}
 
 	return match, nil
 }

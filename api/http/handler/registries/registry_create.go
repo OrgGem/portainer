@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/aws/ecr"
 	httperrors "github.com/portainer/portainer/api/http/errors"
 	"github.com/portainer/portainer/api/http/security"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
@@ -31,9 +32,9 @@ type registryCreatePayload struct {
 	BaseURL string `example:"registry.mydomain.tld:2375"`
 	// Is authentication against this registry enabled
 	Authentication bool `example:"false" validate:"required"`
-	// Username used to authenticate against this registry. Required when Authentication is true
+	// Username for registry authentication with explicit credentials.
 	Username string `example:"registry_user"`
-	// Password used to authenticate against this registry. required when Authentication is true
+	// Password for registry authentication with explicit credentials.
 	Password string `example:"registry_password"`
 	// Gitlab specific details, required when type = 4
 	Gitlab portainer.GitlabRegistryData
@@ -53,14 +54,22 @@ func (payload *registryCreatePayload) Validate(_ *http.Request) error {
 		return errors.New("invalid registry URL")
 	}
 
+	if payload.Ecr.UseIAMRole && (payload.Type != portainer.EcrRegistry || !payload.Authentication) {
+		return errors.New("IAM role authentication requires an authenticated ECR registry")
+	}
 	if payload.Authentication {
-		if len(payload.Username) == 0 || len(payload.Password) == 0 {
-			return errors.New("invalid credentials. Username and password must be specified when authentication is enabled")
-		}
-		if payload.Type == portainer.EcrRegistry {
-			if len(payload.Ecr.Region) == 0 {
-				return errors.New("invalid credentials: access key ID, secret access key and region must be specified when authentication is enabled")
+		if payload.Ecr.UseIAMRole {
+			if err := ecr.ValidateRoleRegistry(payload.URL, payload.Ecr.Region); err != nil {
+				return err
 			}
+			if payload.Username != "" || payload.Password != "" {
+				return errors.New("omit access keys when using an IAM role")
+			}
+		} else if payload.Username == "" || payload.Password == "" {
+			return errors.New("username and password are required for registry authentication")
+		}
+		if payload.Type == portainer.EcrRegistry && payload.Ecr.Region == "" {
+			return errors.New("region is required for ECR authentication")
 		}
 	}
 

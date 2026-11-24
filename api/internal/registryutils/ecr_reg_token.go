@@ -19,7 +19,10 @@ func isRegTokenValid(registry *portainer.Registry) (valid bool) {
 func fetchRegToken(registry *portainer.Registry) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	ecrClient := ecr.NewService(registry.Username, registry.Password, registry.Ecr.Region)
+	ecrClient, err := ecr.NewService(ctx, registry.Username, registry.Password, registry.Ecr.Region, registry.Ecr.UseIAMRole)
+	if err != nil {
+		return err
+	}
 	accessToken, expiryAt, err := ecrClient.GetAuthorizationToken(ctx)
 	if err != nil {
 		return err
@@ -31,11 +34,35 @@ func fetchRegToken(registry *portainer.Registry) error {
 }
 
 func doGetRegToken(tx dataservices.DataStoreTx, registry *portainer.Registry) error {
-	if err := fetchRegToken(registry); err != nil {
+	refreshed := *registry
+	if err := fetchRegToken(&refreshed); err != nil {
 		return err
 	}
 
-	return tx.Registry().Update(registry.ID, registry)
+	// A standalone pull can fetch a token while an administrator edits the
+	// registry. Persist only the token, and only for the identity that issued it.
+	persist := func(tx dataservices.DataStoreTx) error {
+		current, err := tx.Registry().Read(registry.ID)
+		if err != nil {
+			return err
+		}
+		if current.Authentication != registry.Authentication || current.Ecr != registry.Ecr ||
+			current.URL != registry.URL || current.Username != registry.Username || current.Password != registry.Password {
+			return fmt.Errorf("registry %q authentication changed during ECR token refresh", registry.Name)
+		}
+		current.AccessToken, current.AccessTokenExpiry = refreshed.AccessToken, refreshed.AccessTokenExpiry
+		return tx.Registry().Update(current.ID, current)
+	}
+	var err error
+	if store, ok := tx.(dataservices.DataStore); ok {
+		err = store.UpdateTx(persist)
+	} else {
+		err = persist(tx)
+	}
+	if err == nil {
+		registry.AccessToken, registry.AccessTokenExpiry = refreshed.AccessToken, refreshed.AccessTokenExpiry
+	}
+	return err
 }
 
 // RefreshAndPersistECRTokens refreshes and persists ECR tokens for all registries that need it.
@@ -90,8 +117,7 @@ func GetRegEffectiveCredential(registry *portainer.Registry) (username, password
 			}
 		}
 
-		username, password, err = ecr.NewService(registry.Username, registry.Password, registry.Ecr.Region).
-			ParseAuthorizationToken(registry.AccessToken)
+		username, password, err = ecr.ParseAuthorizationToken(registry.AccessToken)
 	}
 
 	return

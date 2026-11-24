@@ -212,6 +212,7 @@ func (handler *Handler) userNamespaces(tx dataservices.DataStoreTx, endpoint *po
 
 func hideRegistryFields(registry *portainer.Registry, hideAccesses bool) {
 	registry.Password = ""
+	registry.AccessToken = ""
 	registry.ManagementConfiguration = nil
 	if hideAccesses {
 		registry.RegistryAccesses = nil

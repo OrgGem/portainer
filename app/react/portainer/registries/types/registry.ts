@@ -47,6 +47,7 @@ export interface Github {
 }
 
 export interface Ecr {
+  UseIAMRole?: boolean;
   Region: string;
 }
 

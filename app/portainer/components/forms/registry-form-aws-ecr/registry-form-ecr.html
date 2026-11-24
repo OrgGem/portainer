@@ -1,12 +1,4 @@
 <form class="form-horizontal" name="$ctrl.registryFormEcr" ng-submit="$ctrl.formAction()">
-  <div class="col-sm-12 form-section-title"> Important notice </div>
-  <div class="form-group">
-    <span class="col-sm-12 text-muted small">
-      For information on how to generate an Access Key, follow the
-      <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html#id_users_create_console" target="_blank">AWS guide</a>.
-    </span>
-  </div>
-
   <div class="col-sm-12 form-section-title"> ECR connection details </div>
 
   <!-- name-input -->
@@ -90,11 +82,21 @@
   <!-- !authentication-checkbox -->
 
   <div ng-if="$ctrl.model.Authentication">
-    <!-- aws-access-key -->
     <div class="form-group">
+      <label for="registry_iam_role" class="col-sm-3 col-lg-2 control-label text-left">Use IAM role</label>
+      <div class="col-sm-9 col-lg-10">
+        <input type="checkbox" id="registry_iam_role" ng-model="$ctrl.model.Ecr.UseIAMRole" aria-describedby="registry_iam_role_help" data-cy="registry-use-iam-role" />
+        <p class="help-block" id="registry_iam_role_help">Use the AWS role configured for Portainer Server to authenticate and renew ECR tokens.</p>
+      </div>
+    </div>
+    <!-- aws-access-key -->
+    <div class="form-group" ng-if="!$ctrl.model.Ecr.UseIAMRole">
       <label for="registry_access_key" class="col-sm-3 col-lg-2 control-label required text-left">AWS Access Key</label>
       <div class="col-sm-9 col-lg-10">
         <input type="text" class="form-control" id="registry_access_key" name="registry_access_key" ng-model="$ctrl.model.Username" required data-cy="registry-access-key-input" />
+        <p class="help-block"
+          ><a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html" target="_blank" rel="noopener noreferrer">AWS access key guide</a></p
+        >
         <div class="help-block" ng-show="$ctrl.registryFormEcr.registry_access_key.$invalid">
           <div class="small text-warning">
             <div ng-messages="$ctrl.registryFormEcr.registry_access_key.$error">
@@ -110,7 +112,7 @@
     <!-- !aws-access-key -->
 
     <!-- aws-secret-access-key -->
-    <div class="form-group">
+    <div class="form-group" ng-if="!$ctrl.model.Ecr.UseIAMRole">
       <label for="registry_secret_access_key" class="col-sm-3 col-lg-2 control-label required text-left">AWS Secret Access Key</label>
       <div class="col-sm-9 col-lg-10">
         <input type="password" class="form-control" id="registry_secret_access_key" name="registry_secret_access_key" ng-model="$ctrl.model.Password" required />

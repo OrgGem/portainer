@@ -2354,6 +2354,7 @@ export type PortainerDockerSnapshotRaw = {
 
 export type PortainerEcrData = {
   Region?: string;
+  UseIAMRole?: boolean;
 };
 
 export type PortainerEdge = {
@@ -4156,7 +4157,7 @@ export type RegistriesRegistryCreatePayload = {
    */
   Name: string;
   /**
-   * Password used to authenticate against this registry. required when Authentication is true
+   * Password for registry authentication with explicit credentials.
    */
   Password?: string;
   /**
@@ -4183,7 +4184,7 @@ export type RegistriesRegistryCreatePayload = {
    */
   URL: string;
   /**
-   * Username used to authenticate against this registry. Required when Authentication is true
+   * Username for registry authentication with explicit credentials.
    */
   Username?: string;
 };
@@ -4248,7 +4249,7 @@ export type RegistriesRegistryUpdatePayload = {
    */
   Name: string;
   /**
-   * Password used to authenticate against this registry. required when Authentication is true
+   * Password for registry authentication with explicit credentials.
    */
   Password?: string;
   /**
@@ -4264,7 +4265,7 @@ export type RegistriesRegistryUpdatePayload = {
    */
   URL: string;
   /**
-   * Username used to authenticate against this registry. Required when Authentication is true
+   * Username for registry authentication with explicit credentials.
    */
   Username?: string;
 };

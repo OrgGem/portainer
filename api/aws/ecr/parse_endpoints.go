@@ -68,3 +68,16 @@ func ParseECREndpoint(urlStr string) (*Registry, error) {
 		Public: false,
 	}, nil
 }
+
+// ValidateRoleRegistry limits workload credentials to private ECR registry hosts.
+func ValidateRoleRegistry(address, region string) error {
+	host := strings.TrimSuffix(strings.TrimPrefix(address, "https://"), "/")
+	if strings.ContainsAny(host, "/:@?#") {
+		return fmt.Errorf("IAM role authentication requires a private ECR registry hostname")
+	}
+	registry, err := ParseECREndpoint(host)
+	if err != nil || registry.ID == "" || registry.Region != region {
+		return fmt.Errorf("IAM role authentication requires a private ECR registry hostname in region %q", region)
+	}
+	return nil
+}
